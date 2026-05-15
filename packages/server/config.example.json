@@ -1,0 +1,17 @@
+{
+  "moodle": {
+    "url": "https://your-moodle-instance.com",
+    "apiVersion": "auto"
+  },
+  "server": {
+    "name": "moodlereport",
+    "version": "0.1.0"
+  },
+  "logging": {
+    "level": "info",
+    "toolCallLog": "./logs/tool-calls.jsonl"
+  },
+  "plugins": {
+    "searchPaths": []
+  }
+}

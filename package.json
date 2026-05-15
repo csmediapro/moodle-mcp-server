@@ -1,0 +1,27 @@
+{
+  "name": "moodlereport",
+  "version": "0.1.0",
+  "description": "AI-powered LMS analytics — ask your Moodle instance anything",
+  "private": true,
+  "license": "AGPL-3.0",
+  "workspaces": [
+    "packages/server",
+    "packages/client"
+  ],
+  "scripts": {
+    "server:build": "npm run build -w packages/server",
+    "server:dev": "npm run dev -w packages/server",
+    "server:start": "node packages/server/dist/index.js",
+    "server:start:http": "node packages/server/dist/entry/http.js",
+    "client:dev": "npm run dev -w packages/client",
+    "client:build": "npm run build -w packages/client",
+    "build": "npm run server:build && npm run client:build",
+    "clean": "rm -rf packages/server/dist packages/client/.next"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

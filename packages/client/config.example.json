@@ -1,0 +1,43 @@
+{
+  "llm": {
+    "active": "ollama-cloud",
+    "providers": {
+      "anthropic": {
+        "type": "anthropic",
+        "label": "Anthropic",
+        "baseUrl": "https://api.anthropic.com",
+        "defaultModel": "claude-sonnet-4-5-20250929",
+        "apiKeyEnv": "ANTHROPIC_API_KEY",
+        "enabled": true
+      },
+      "openai": {
+        "type": "openai-compatible",
+        "label": "OpenAI",
+        "baseUrl": "https://api.openai.com/v1",
+        "defaultModel": "gpt-4o",
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "enabled": true
+      },
+      "ollama-cloud": {
+        "type": "openai-compatible",
+        "label": "Ollama Cloud",
+        "baseUrl": "https://ollama.com/v1",
+        "defaultModel": "gpt-oss:20b",
+        "apiKeyEnv": "OLLAMA_API_KEY",
+        "enabled": true
+      },
+      "local-llamacpp": {
+        "type": "openai-compatible",
+        "label": "llama.cpp (local)",
+        "baseUrl": "http://172.24.48.1:8080/v1",
+        "defaultModel": "auto",
+        "enabled": true
+      }
+    }
+  },
+  "mcp": {
+    "serverCommand": "node",
+    "serverArgs": ["dist/index.js"],
+    "serverCwd": "../server"
+  }
+}
