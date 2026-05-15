@@ -58,6 +58,87 @@ The client will auto-detect your Moodle instance and present a chat interface wh
 
 ---
 
+## Connecting an LLM
+
+MoodleReport needs an AI model to power the natural-language interface. You bring the model — the server and reference client support any MCP-compatible provider.
+
+### Option 1: Run Locally (Recommended for Speed & Privacy)
+
+Running a local model keeps all data on your own hardware — nothing leaves your network. Modern quantized models run well on consumer GPUs and even CPU-only setups.
+
+**Performance:** A quantized 24B model on a single RTX 3090 delivers ~1.5-second responses after the first query — faster than most cloud APIs once the cache is warm.
+
+#### Via Ollama (easiest)
+
+```bash
+# Install Ollama: https://ollama.com
+ollama pull gemma3:12b      # Fast, reliable tool use (~200ms TTFT)
+ollama pull qwen3:14b       # Strong reasoning, good for complex queries
+ollama pull deepseek-r1:14b # Excellent at multi-step chains
+```
+
+Then point the reference client at `http://localhost:11434` (Ollama's default).
+
+#### Via llama.cpp (maximum control)
+
+```bash
+# Download a GGUF model (example: Devstral 24B Q4)
+# Run the llama.cpp server:
+llama-server -m devstral-24b-Q4_K_M.gguf --ctx-size 60000 --port 8080
+```
+
+Point the reference client at `http://localhost:8080/v1`.
+
+#### Recommended local models
+
+| Model | Size | Best For | Hardware |
+|---|---|---|---|
+| Gemma 3 12B | ~7 GB VRAM | Fast tool calls, straightforward queries | Single consumer GPU |
+| Qwen 3 14B | ~8.5 GB VRAM | Complex reasoning, multi-tool chains | Single consumer GPU |
+| Devstral 24B Q4 | ~14.5 GB VRAM | Maximum capability, 60K context | RTX 3090 / 4090 |
+
+### Option 2: Cloud Providers
+
+**Anthropic (Claude):**
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+Select "Anthropic" in the reference client's provider dropdown. Claude Sonnet offers the most reliable tool-calling behavior.
+
+**OpenAI (GPT):**
+```bash
+export OPENAI_API_KEY=sk-...
+```
+Select "OpenAI" in the provider dropdown. GPT-4o performs well on structured queries.
+
+**Ollama Cloud:**
+Uses the same API as local Ollama, hosted at `https://ollama.com/v1`. Good middle ground — faster than local cold starts, more private than big cloud providers.
+
+### Option 3: Claude Desktop (Direct MCP)
+
+Claude Desktop connects to MoodleReport directly over stdio — no reference client needed.
+
+Add to your Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "moodlereport": {
+      "command": "node",
+      "args": ["/path/to/moodle-mcp-server/packages/server/dist/index.js"],
+      "env": {
+        "MOODLE_URL": "https://your-moodle-instance.com",
+        "MOODLE_TOKEN": "your-api-token"
+      }
+    }
+  }
+}
+```
+
+Restart Claude Desktop. MoodleReport's tools will appear in Claude's tool list — ask questions directly.
+
+---
+
 ## Tools
 
 ### Core Tools (free, open source — AGPL)
@@ -89,7 +170,7 @@ Learn more at [csmediapro.com/moodlereport](https://csmediapro.com/moodlereport)
 User (plain English question)
     │
     ▼
-AI Agent (Claude / GPT / Gemini / Ollama)
+AI Agent (Claude / GPT / Gemini / Ollama / local)
     │
     ▼  MCP Protocol
 MoodleReport Server
