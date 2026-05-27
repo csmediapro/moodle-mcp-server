@@ -1,8 +1,8 @@
 /**
  * Auth layer — defines the interface. Even though stdio mode
  * doesn't authenticate external callers, we define the abstraction
- * now so future transports (Streamable HTTP, etc.) can plug in
- * real auth without restructuring tool handlers.
+ * now so future host wrappers or agents can attach identity and
+ * policy checks without restructuring tool handlers.
  *
  * Every MCP request passes through `authenticate()` before reaching
  * a tool handler. In stdio mode, it's a no-op.

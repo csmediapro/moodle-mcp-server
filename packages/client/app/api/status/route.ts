@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { initMCPClient, callTool } from "@/lib/mcp-client";
+import { readServerDisplayConfig } from "@/lib/server-config";
 
 export async function GET() {
   try {
@@ -18,9 +19,11 @@ export async function GET() {
     await initMCPClient(config.mcp);
 
     const result = await callTool("get_site_info", {});
+    const { serverName } = readServerDisplayConfig();
 
     return NextResponse.json({
       ok: true,
+      serverName,
       siteInfo: result,
     });
   } catch (error) {

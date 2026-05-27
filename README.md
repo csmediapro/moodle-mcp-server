@@ -1,8 +1,10 @@
-# MoodleReport — AI-Powered LMS Analytics
+# Moodle Report — AI-Powered LMS Analytics
 
 > **Ask your Moodle instance anything. Get structured answers in seconds.**
 
-MoodleReport is an open-source MCP (Model Context Protocol) server that connects AI agents directly to Moodle's Web Services API. Instead of learning report builders, writing SQL, or exporting CSVs, you ask questions in plain English — the AI agent queries your LMS and returns structured data.
+Moodle Report is the customer-facing brand for an open-source MCP (Model Context Protocol) server that connects AI agents directly to Moodle's Web Services API. The technical platform and OSS package are named `moodle-mcp-server`.
+
+Instead of learning report builders, writing SQL, or exporting CSVs, you ask questions in plain English — the AI agent queries your LMS and returns structured data.
 
 ---
 
@@ -45,6 +47,24 @@ npm run server:build
 node packages/server/dist/index.js
 ```
 
+### Config identity
+
+The core owns two different server identity fields:
+
+- `server.id` — stable machine identity, for example `mcp_8f3k2q9x`
+- `server.name` — human-facing display label
+
+If `server.id` is missing, the core generates one once and persists it to the resolved config file before startup continues.
+
+Environment overrides:
+
+- `MOODLE_MCP_CONFIG` or `MOODLE_MCP_SERVER_CONFIG` — choose the config file path
+- `SERVER_ID` — explicit `server.id` override
+- `SERVER_NAME` — explicit `server.name` override
+- `SERVER_VERSION` — explicit `server.version` override
+
+If `server.id` is missing and the resolved config path is not writable, startup fails deliberately.
+
 ### Using the reference client
 
 ```bash
@@ -60,7 +80,7 @@ The client will auto-detect your Moodle instance and present a chat interface wh
 
 ## Connecting an LLM
 
-MoodleReport needs an AI model to power the natural-language interface. You bring the model — the server and reference client support any MCP-compatible provider.
+Moodle Report needs an AI model to power the natural-language interface. You bring the model — the `moodle-mcp-server` core and reference client support any MCP-compatible provider.
 
 ### Option 1: Run Locally (Recommended for Speed & Privacy)
 
@@ -116,14 +136,14 @@ Uses the same API as local Ollama, hosted at `https://ollama.com/v1`. Good middl
 
 ### Option 3: Claude Desktop (Direct MCP)
 
-Claude Desktop connects to MoodleReport directly over stdio — no reference client needed.
+Claude Desktop connects to the `moodle-mcp-server` core directly over stdio — no reference client needed.
 
 Add to your Claude Desktop config (`claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "moodlereport": {
+    "moodle-mcp-server": {
       "command": "node",
       "args": ["/path/to/moodle-mcp-server/packages/server/dist/index.js"],
       "env": {
@@ -135,7 +155,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
 }
 ```
 
-Restart Claude Desktop. MoodleReport's tools will appear in Claude's tool list — ask questions directly.
+Restart Claude Desktop. The server's tools will appear in Claude's tool list — ask questions directly.
 
 ---
 
@@ -173,7 +193,7 @@ User (plain English question)
 AI Agent (Claude / GPT / Gemini / Ollama / local)
     │
     ▼  MCP Protocol
-MoodleReport Server
+`moodle-mcp-server`
     ├── Tool Registry (core + plugins)
     ├── Cache Layer (in-memory course catalog)
     └── Moodle Client (REST API calls)
@@ -185,7 +205,13 @@ Moodle Web Services API
 ### Transport modes
 
 - **Stdio** — `dist/index.js` — runs as a subprocess, used by Claude Desktop and similar clients
-- **Streamable HTTP** — `dist/entry/http.js` — exposed over HTTP with API key authentication
+
+The OSS core intentionally ships with `stdio` only. Any network-facing wrapper, remote supervision, or premium plugin attachment belongs in a separate commercial node agent or wrapper.
+
+### Plugin docs
+
+- [Plugin Contract](./docs/plugins/CONTRACT.md)
+- [Creating Plugins](./docs/plugins/CREATING-PLUGINS.md)
 
 ---
 
@@ -194,19 +220,19 @@ Moodle Web Services API
 AGPL v3 — see [LICENSE](LICENSE).
 
 This means you can:
-- ✅ Use MoodleReport for free, in any environment
+- ✅ Use the `moodle-mcp-server` core for free, in any environment
 - ✅ Modify the source code for your needs
 - ✅ Build and distribute derivative works
 
 You cannot:
-- ❌ Repackage MoodleReport as a closed-source competing commercial product
+- ❌ Repackage the `moodle-mcp-server` core as a closed-source competing commercial product
 - ❌ Offer it as a network service without sharing your modifications
 
 ---
 
 ## Built by CSMediaPro
 
-MoodleReport is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation.
+Moodle Report is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation.
 
 - **Product page:** [csmediapro.com/moodlereport](https://csmediapro.com/moodlereport)
 - **Contact:** contact@csmediapro.com

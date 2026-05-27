@@ -13,8 +13,12 @@ export const ConfigSchema = z.object({
     apiVersion: z.enum(["auto"]).default("auto"),
   }),
   server: z.object({
-    /** Display name surfaced in MCP server metadata */
-    name: z.string().default("moodlereport"),
+    /** Stable machine identity used by agents, dashboards, and audits; generated once and persisted locally */
+    id: z
+      .string()
+      .regex(/^mcp_[a-z0-9]{8}$/i, "must match mcp_<8 alphanumeric chars>"),
+    /** Human-friendly display label surfaced in MCP metadata; operators may set this to any label they want */
+    name: z.string().default("Moodle MCP Server"),
     /** Semantic version — bump on breaking changes to config or tool signatures */
     version: z.string().default("0.1.0"),
   }),
@@ -27,6 +31,8 @@ export const ConfigSchema = z.object({
     toolCallLog: z.string().default("./logs/tool-calls.jsonl"),
   }),
   plugins: z.object({
+    /** Optional license key used to unlock premium plugins when an agent injects entitlements via config */
+    licenseKey: z.string().min(1).optional(),
     /** Search paths for plugin tool modules */
     searchPaths: z.array(z.object({
       path: z.string(),

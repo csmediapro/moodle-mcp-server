@@ -1,0 +1,230 @@
+import { MoodleClient } from "../moodle/client.js";
+import { hasCapability, MoodleCapabilities } from "../moodle/capabilities.js";
+import { logger } from "../logging/index.js";
+import { z } from "zod";
+import {
+  buildToolErrorResponse,
+  buildToolResponse,
+} from "./response-types.js";
+
+export const name = "search_users";
+
+export const description =
+  "Search Moodle users by firstname, lastname, email, username, or idnumber. " +
+  "Provide at least one filter. Moodle performs the filtering first; this tool does not preload the full user directory. " +
+  "If multiple users match, do not guess downstream actions; select the correct user ID first.";
+
+export const inputSchema = z.object({
+  firstname: z.string().trim().min(1).optional().describe("Search by first name"),
+  lastname: z.string().trim().min(1).optional().describe("Search by last name"),
+  email: z.string().trim().min(1).optional().describe("Search by email"),
+  username: z.string().trim().min(1).optional().describe("Search by username"),
+  idnumber: z.string().trim().min(1).optional().describe("Search by ID number"),
+  limit: z.number().int().min(1).max(200).optional().default(25).describe("Maximum users to return"),
+  offset: z.number().int().min(0).optional().default(0).describe("Pagination offset applied after Moodle returns matches"),
+}).refine(
+  (value) => [value.firstname, value.lastname, value.email, value.username, value.idnumber].some((v) => v != null),
+  {
+    message: "Provide at least one search field",
+    path: ["firstname"],
+  }
+);
+
+type MoodleUser = {
+  id: number;
+  username: string;
+  firstname: string;
+  lastname: string;
+  fullname?: string;
+  email?: string;
+  idnumber?: string;
+  department?: string;
+  institution?: string;
+  city?: string;
+  country?: string;
+  firstaccess?: number;
+  lastaccess?: number;
+  suspended?: boolean;
+  confirmed?: boolean;
+};
+
+type MoodleUserSearchResponse = {
+  users?: MoodleUser[];
+  warnings?: Array<{ item?: string; itemid?: number; warningcode?: string; message?: string }>;
+};
+
+function normalizeUser(user: MoodleUser) {
+  return {
+    id: user.id,
+    fullname: user.fullname ?? `${user.firstname} ${user.lastname}`.trim(),
+    firstname: user.firstname,
+    lastname: user.lastname,
+    email: user.email ?? null,
+    username: user.username,
+    idnumber: user.idnumber ?? null,
+    department: user.department ?? null,
+    institution: user.institution ?? null,
+    city: user.city ?? null,
+    country: user.country ?? null,
+    suspended: Boolean(user.suspended),
+    confirmed: user.confirmed ?? null,
+    lastaccess: user.lastaccess ? new Date(user.lastaccess * 1000).toISOString() : null,
+    firstaccess: user.firstaccess ? new Date(user.firstaccess * 1000).toISOString() : null,
+  };
+}
+
+export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
+  return async (args: unknown) => {
+    const parsed = inputSchema.parse(args) as {
+      firstname?: string;
+      lastname?: string;
+      email?: string;
+      username?: string;
+      idnumber?: string;
+      limit: number;
+      offset: number;
+    };
+
+    if (!hasCapability(caps, "core_user_get_users")) {
+      return buildToolErrorResponse({
+        error: {
+          code: "user_search_capability_missing",
+          message: "core_user_get_users is not available on this Moodle instance.",
+          kind: "capability",
+          canRetry: false,
+          actionRequired: "Use a Moodle token/service that exposes core_user_get_users.",
+        },
+        summary: "I could not search users because this Moodle token does not expose the user search API.",
+        meta: {
+          tool: name,
+          title: "User Search",
+          entity: "user_directory",
+          resultCount: 0,
+        },
+        suggestedQueries: [
+          "Get user by email [Exact Email]",
+          "List users in course [Course ID]",
+        ],
+      });
+    }
+
+    const criteriaEntries = [
+      ["firstname", parsed.firstname],
+      ["lastname", parsed.lastname],
+      ["email", parsed.email],
+      ["username", parsed.username],
+      ["idnumber", parsed.idnumber],
+    ].filter(([, value]) => value != null) as Array<[string, string]>;
+
+    const params: Record<string, string | number> = {};
+    for (const [index, [key, value]] of criteriaEntries.entries()) {
+      params[`criteria[${index}][key]`] = key;
+      params[`criteria[${index}][value]`] = value;
+    }
+
+    const result = await client.call<MoodleUserSearchResponse>({
+      wsfunction: "core_user_get_users",
+      params,
+    });
+
+    const allUsers = (result.users ?? []).map(normalizeUser);
+    const pagedUsers = allUsers.slice(parsed.offset, parsed.offset + parsed.limit);
+    const warnings = (result.warnings ?? []).map((warning) => warning.message).filter(Boolean) as string[];
+
+    logger.debug("User search completed", {
+      event: "search_users_completed",
+      criteria: criteriaEntries.map(([key]) => key),
+      totalMatches: allUsers.length,
+      returned: pagedUsers.length,
+      offset: parsed.offset,
+      limit: parsed.limit,
+    });
+
+    return buildToolResponse({
+      meta: {
+        tool: name,
+        title: "User Search Results",
+        entity: "user_directory",
+        resultCount: pagedUsers.length,
+      },
+      data: {
+        kind: "table",
+        title: "User Search Results",
+        columns: [
+          { key: "id", label: "User ID" },
+          { key: "fullname", label: "Name" },
+          { key: "email", label: "Email" },
+          { key: "username", label: "Username" },
+          { key: "department", label: "Department" },
+          { key: "institution", label: "Institution" },
+          { key: "lastaccess", label: "Last Access" },
+          { key: "suspended", label: "Suspended" },
+        ],
+        rows: pagedUsers,
+        pagination: {
+          offset: parsed.offset,
+          limit: parsed.limit,
+          total: allUsers.length,
+          hasMore: parsed.offset + parsed.limit < allUsers.length,
+        },
+      },
+      context: {
+        summary:
+          allUsers.length === 0
+            ? "No users matched the provided search filters."
+            : `Returned ${pagedUsers.length} of ${allUsers.length} matching users for the requested filters.`,
+        metrics: {
+          returned: pagedUsers.length,
+          total_matches: allUsers.length,
+          offset: parsed.offset,
+          limit: parsed.limit,
+          filters_applied: criteriaEntries.length,
+        },
+        highlights: [
+          `Filters: ${criteriaEntries.map(([key, value]) => `${key}=${value}`).join(", ")}`,
+          ...(allUsers.length > parsed.limit ? [`Results were truncated to limit ${parsed.limit}.`] : []),
+        ],
+        warnings: warnings.length > 0 ? warnings : undefined,
+        suggestedQueries: [
+          "Get user by email [Exact Email]",
+          "List courses for user [User ID]",
+          "List users in course [Course ID]",
+        ],
+        fields: [
+          "id",
+          "fullname",
+          "firstname",
+          "lastname",
+          "email",
+          "username",
+          "idnumber",
+          "department",
+          "institution",
+          "city",
+          "country",
+          "lastaccess",
+          "firstaccess",
+          "suspended",
+          "confirmed",
+        ],
+      },
+      interactions: allUsers.length > 1
+        ? {
+            mode: "row_actions",
+            prompt: "Multiple users matched. Select the correct row to continue.",
+            submitAs: "user_message",
+            rowKey: "id",
+            rowLabelFields: ["fullname", "email"],
+            rowActions: [
+              {
+                type: "button",
+                label: "Select",
+                template: "list courses for user {{id}}",
+                style: "primary",
+              },
+            ],
+          }
+        : undefined,
+    });
+  };
+}

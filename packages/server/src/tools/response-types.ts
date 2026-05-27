@@ -36,6 +36,22 @@ export interface ToolResolutionBlock {
   resolvedParentPath?: string | null;
 }
 
+export interface ToolInteractionAction {
+  type: "button";
+  label: string;
+  template: string;
+  style?: "primary" | "secondary";
+}
+
+export interface ToolInteractionsBlock {
+  mode: "row_actions";
+  prompt?: string;
+  submitAs?: "user_message" | "assistant_context";
+  rowKey?: string;
+  rowLabelFields?: string[];
+  rowActions: ToolInteractionAction[];
+}
+
 export interface ToolMetaBlock {
   tool: string;
   title: string;
@@ -59,6 +75,7 @@ export interface ToolResponse {
   data: ToolDataBlock;
   context: ToolContextBlock;
   resolution?: ToolResolutionBlock;
+  interactions?: ToolInteractionsBlock;
   error?: string | ToolErrorBlock;
 }
 
@@ -68,6 +85,7 @@ export function buildToolResponse(input: {
   data: ToolDataBlock;
   context: ToolContextBlock;
   resolution?: ToolResolutionBlock;
+  interactions?: ToolInteractionsBlock;
   error?: string | ToolErrorBlock;
 }): ToolResponse {
   return {
@@ -83,6 +101,7 @@ export function buildToolResponse(input: {
     data: input.data,
     context: input.context,
     ...(input.resolution ? { resolution: input.resolution } : {}),
+    ...(input.interactions ? { interactions: input.interactions } : {}),
     ...(input.error ? { error: input.error } : {}),
   };
 }

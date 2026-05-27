@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { readServerDisplayConfig } from "@/lib/server-config";
 
-export const metadata: Metadata = {
-  title: "Moodle MCP — Reference Client",
-  description: "Reference client for the Moodle MCP server",
-};
+export function generateMetadata(): Metadata {
+  const { serverName } = readServerDisplayConfig();
+
+  return {
+    title: serverName,
+    description: `Reference client for ${serverName}`,
+  };
+}
 
 export default function RootLayout({
   children,

@@ -48,6 +48,24 @@ type StreamEvent =
   | { type: "error"; message: string }
   | { type: "done"; stopReason: string; usage?: { promptTokens: number; completionTokens: number } };
 
+function createClientId(): string {
+  const webCrypto = globalThis.crypto;
+  if (typeof webCrypto?.randomUUID === "function") {
+    return webCrypto.randomUUID();
+  }
+
+  if (typeof webCrypto?.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    webCrypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
+    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+  }
+
+  return `fallback-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 // ─── Page Component ───────────────────────────────────────────────────────
 
 export default function ChatPage() {
@@ -59,6 +77,7 @@ export default function ChatPage() {
   const [activeModel, setActiveModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [siteStatus, setSiteStatus] = useState<{
+    serverName?: string;
     siteName?: string;
     release?: string;
     version?: string;
@@ -73,6 +92,162 @@ export default function ChatPage() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const submitMessage = useCallback(async (rawText: string) => {
+    const text = rawText.trim();
+    if (!text || isLoading) return;
+
+    setInput("");
+    setError(null);
+    localStorage.setItem(LS_PROVIDER, activeProvider);
+    localStorage.setItem(LS_MODEL, activeModel);
+
+    const userMsg: ChatMessage = {
+      id: createClientId(),
+      role: "user",
+      content: text,
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
+    const assistantId = createClientId();
+    const assistantMsg: ChatMessage = {
+      id: assistantId,
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+    };
+    setMessages((prev) => [...prev, assistantMsg]);
+    setIsLoading(true);
+
+    const history = [...messages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+      toolCalls: m.toolCalls?.map((tc) => ({
+        id: tc.id,
+        name: tc.name,
+        args: tc.args,
+      })),
+      toolResults: m.toolCalls?.map((tc) =>
+        tc.result
+          ? {
+              id: tc.id,
+              result:
+                tc.historyResult ||
+                (typeof tc.result === "string"
+                  ? tc.result
+                  : JSON.stringify(tc.result)),
+            }
+          : undefined
+      ).filter(Boolean),
+    })).flatMap((m) => {
+      const msgs: Array<{ role: string; content: string; toolCalls?: unknown[]; toolCallId?: string }> = [];
+      const isMergedAssistant =
+        m.role === "assistant" &&
+        m.toolCalls?.length &&
+        m.content;
+
+      if (isMergedAssistant) {
+        msgs.push({ role: "assistant", content: "", toolCalls: m.toolCalls });
+      } else {
+        msgs.push({ role: m.role, content: m.content, toolCalls: m.toolCalls });
+      }
+
+      if (m.toolResults?.length) {
+        for (const tr of m.toolResults) {
+          if (tr) {
+            msgs.push({
+              role: "tool",
+              content: tr.result,
+              toolCallId: tr.id,
+            });
+          }
+        }
+      }
+
+      if (isMergedAssistant && m.content) {
+        msgs.push({ role: "assistant", content: m.content });
+      }
+
+      return msgs;
+    });
+
+    try {
+      abortRef.current = new AbortController();
+
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          history: history,
+          providerKey: activeProvider || undefined,
+          model: activeModel || undefined,
+        }),
+        signal: abortRef.current.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server error: ${res.status}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const json = line.slice(6).trim();
+          if (!json) continue;
+
+          try {
+            const event: StreamEvent = JSON.parse(json);
+            processEvent(event, assistantId, setMessages);
+            if (event.type === "done") {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, isStreaming: false } : m
+                )
+              );
+              if (event.usage) {
+                setTokenCount((prev) =>
+                  prev ? { ...prev, current: event.usage!.promptTokens } : prev,
+                );
+              }
+            }
+          } catch {
+            // Skip malformed events
+          }
+        }
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+        return;
+      }
+      const errMsg = e instanceof Error ? e.message : String(e);
+      setError(errMsg);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, content: m.content || `Error: ${errMsg}`, isStreaming: false }
+            : m
+        )
+      );
+    } finally {
+      setIsLoading(false);
+      abortRef.current = null;
+    }
+  }, [activeModel, activeProvider, isLoading, messages]);
 
   // Fetch available providers on mount
   useEffect(() => {
@@ -131,6 +306,7 @@ export default function ChatPage() {
       .then((r) => r.json())
       .then((data: {
         ok: boolean;
+        serverName?: string;
         siteInfo?: unknown;
         error?: string;
       }) => {
@@ -143,6 +319,7 @@ export default function ChatPage() {
         const metrics = si.context?.metrics || {};
 
         setSiteStatus({
+          serverName: data.serverName,
           siteName: (record.siteName as string) || undefined,
           release: (record.release as string) || undefined,
           version: (record.version as string) || undefined,
@@ -170,7 +347,7 @@ export default function ChatPage() {
 
     const welcomeText = `You just connected to the LMS. Call get_site_info to learn about the instance, then introduce yourself briefly as the data analyst. Mention what provider/model you're running on (I'm running on ${selectedProvider?.label || activeProvider} with ${activeModel}), note how many courses and API functions are available, and invite the user to explore. Keep it under 4 sentences.`;
 
-    const assistantId = crypto.randomUUID();
+    const assistantId = createClientId();
     const assistantMsg: ChatMessage = {
       id: assistantId,
       role: "assistant",
@@ -180,7 +357,7 @@ export default function ChatPage() {
     // Prepend a synthetic user message so history alternation is
     // correct for strict Jinja templates on the second turn.
     const syntheticUser: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: createClientId(),
       role: "user",
       content: welcomeText,
       hidden: true,
@@ -283,179 +460,8 @@ export default function ChatPage() {
   }, []);
 
   const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text || isLoading) return;
-
-    setInput("");
-    setError(null);
-    localStorage.setItem(LS_PROVIDER, activeProvider);
-    localStorage.setItem(LS_MODEL, activeModel);
-
-    // Add user message
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: text,
-    };
-    setMessages((prev) => [...prev, userMsg]);
-
-    // Add placeholder assistant message
-    const assistantId = crypto.randomUUID();
-    const assistantMsg: ChatMessage = {
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      isStreaming: true,
-    };
-    setMessages((prev) => [...prev, assistantMsg]);
-    setIsLoading(true);
-
-    // Build conversation history (exclude the placeholder).
-    //
-    // CRITICAL: the UI merges an entire agent-loop turn into one assistant
-    // bubble (tool calls + final text), but the actual conversation was:
-    //   assistant (tool_calls) → tool (results) → assistant (final text)
-    //
-    // Strict local servers (llama.cpp / Devstral template) reject the merged
-    // form on the second turn because it violates message-alternation rules.
-    // We fix it by splitting merged assistant messages back into the original
-    // two-turn structure during history reconstruction.
-    const history = [...messages, userMsg].map((m) => ({
-      role: m.role,
-      content: m.content,
-      toolCalls: m.toolCalls?.map((tc) => ({
-        id: tc.id,
-        name: tc.name,
-        args: tc.args,
-      })),
-      toolResults: m.toolCalls?.map((tc) =>
-        tc.result
-          ? {
-              id: tc.id,
-              result:
-                tc.historyResult ||
-                (typeof tc.result === "string"
-                  ? tc.result
-                  : JSON.stringify(tc.result)),
-            }
-          : undefined
-      ).filter(Boolean),
-    })).flatMap((m) => {
-      const msgs: Array<{ role: string; content: string; toolCalls?: unknown[]; toolCallId?: string }> = [];
-
-      // When an assistant message has BOTH toolCalls AND final answer text,
-      // split into two assistant turns to preserve correct alternation.
-      const isMergedAssistant =
-        m.role === "assistant" &&
-        m.toolCalls?.length &&
-        m.content;
-
-      if (isMergedAssistant) {
-        // First assistant turn: tool calls only (the actual tool-invocation turn)
-        msgs.push({ role: "assistant", content: "", toolCalls: m.toolCalls });
-      } else {
-        msgs.push({ role: m.role, content: m.content, toolCalls: m.toolCalls });
-      }
-
-      // Tool results always go between the two assistant turns
-      if (m.toolResults?.length) {
-        for (const tr of m.toolResults) {
-          if (tr) {
-            msgs.push({
-              role: "tool",
-              content: tr.result,
-              toolCallId: tr.id,
-            });
-          }
-        }
-      }
-
-      // Second assistant turn: the post-tool final answer text (no tool_calls)
-      if (isMergedAssistant && m.content) {
-        msgs.push({ role: "assistant", content: m.content });
-      }
-
-      return msgs;
-    });
-
-    try {
-      abortRef.current = new AbortController();
-
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: history,
-          providerKey: activeProvider || undefined,
-          model: activeModel || undefined,
-        }),
-        signal: abortRef.current.signal,
-      });
-
-      if (!res.ok) {
-        throw new Error(`Server error: ${res.status}`);
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error("No response body");
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const json = line.slice(6).trim();
-          if (!json) continue;
-
-          try {
-            const event: StreamEvent = JSON.parse(json);
-            processEvent(event, assistantId, setMessages);
-            if (event.type === "done") {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === assistantId ? { ...m, isStreaming: false } : m
-                )
-              );
-              if (event.usage) {
-                setTokenCount((prev) =>
-                  prev ? { ...prev, current: event.usage!.promptTokens } : prev,
-                );
-              }
-            }
-          } catch {
-            // Skip malformed events
-          }
-        }
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        // User cancelled — remove the streaming message
-        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
-        return;
-      }
-      const errMsg = e instanceof Error ? e.message : String(e);
-      setError(errMsg);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, content: m.content || `Error: ${errMsg}`, isStreaming: false }
-            : m
-        )
-      );
-    } finally {
-      setIsLoading(false);
-      abortRef.current = null;
-    }
-  }, [input, isLoading, messages, activeProvider, activeModel]);
+    await submitMessage(input);
+  }, [input, submitMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -472,13 +478,21 @@ export default function ChatPage() {
     setInput(query);
   }, []);
 
+  const handleToolAction = useCallback(async (query: string) => {
+    await submitMessage(query);
+  }, [submitMessage]);
+
   return (
     <div className="mx-auto flex h-full min-h-screen max-w-5xl flex-col bg-slate-50 text-slate-900">
       {/* Header */}
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white/90 px-5 py-4 backdrop-blur shrink-0">
         <div>
-          <h1 className="text-lg font-semibold tracking-tight">Moodle MCP Server</h1>
-          <p className="text-xs text-slate-500">Reference Client</p>
+          <h1 className="text-lg font-semibold tracking-tight">
+            {siteStatus?.serverName || "Moodle MCP Server"}
+          </h1>
+          <p className="text-xs text-slate-500">
+            {`Reference client for ${siteStatus?.serverName || "Moodle MCP Server"}`}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <select
@@ -622,7 +636,12 @@ export default function ChatPage() {
         )}
 
         {messages.filter((m) => !m.hidden).map((msg) => (
-          <MessageBubble key={msg.id} message={msg} onUseSuggestedQuery={handleSuggestedQuery} />
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            onUseSuggestedQuery={handleSuggestedQuery}
+            onToolAction={handleToolAction}
+          />
         ))}
 
         {error && (
@@ -673,9 +692,11 @@ export default function ChatPage() {
 function MessageBubble({
   message,
   onUseSuggestedQuery,
+  onToolAction,
 }: {
   message: ChatMessage;
   onUseSuggestedQuery?: (query: string) => void;
+  onToolAction?: (query: string) => void;
 }) {
   const isUser = message.role === "user";
   const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
@@ -710,7 +731,7 @@ function MessageBubble({
       {hasToolCalls && (
         <div className="space-y-3">
           {message.toolCalls!.map((tc) => (
-            <ToolResultHero key={tc.id} toolCall={tc} />
+            <ToolResultHero key={tc.id} toolCall={tc} onToolAction={onToolAction} />
           ))}
         </div>
       )}
@@ -747,7 +768,13 @@ function MessageBubble({
 
 // ─── Tool Result Hero Card ─────────────────────────────────────────────────
 
-function ToolResultHero({ toolCall }: { toolCall: ToolCallBlock }) {
+function ToolResultHero({
+  toolCall,
+  onToolAction,
+}: {
+  toolCall: ToolCallBlock;
+  onToolAction?: (query: string) => void;
+}) {
   const structuredResult = isStructuredToolResult(toolCall.result) ? toolCall.result : null;
 
   // Loading state
@@ -809,7 +836,7 @@ function ToolResultHero({ toolCall }: { toolCall: ToolCallBlock }) {
       </div>
 
       {/* Data block */}
-      <ToolResultView result={structuredResult} />
+      <ToolResultView result={structuredResult} onAction={onToolAction} />
     </div>
   );
 }

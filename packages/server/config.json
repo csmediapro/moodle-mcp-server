@@ -5,7 +5,8 @@
   },
   "server": {
     "name": "moodle-mcp",
-    "version": "0.1.0"
+    "version": "0.1.0",
+    "id": "mcp_0p8sqp9v"
   },
   "logging": {
     "level": "info",

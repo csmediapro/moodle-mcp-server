@@ -30,6 +30,22 @@ interface ToolPagination {
   hasMore?: boolean;
 }
 
+interface ToolInteractionAction {
+  type: "button";
+  label: string;
+  template: string;
+  style?: "primary" | "secondary";
+}
+
+interface ToolInteractions {
+  mode: "row_actions";
+  prompt?: string;
+  submitAs?: "user_message" | "assistant_context";
+  rowKey?: string;
+  rowLabelFields?: string[];
+  rowActions: ToolInteractionAction[];
+}
+
 export interface StructuredToolResult {
   ok?: boolean;
   error?:
@@ -72,6 +88,7 @@ export interface StructuredToolResult {
     resolvedParentName?: string | null;
     resolvedParentPath?: string | null;
   };
+  interactions?: ToolInteractions;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -134,6 +151,16 @@ function formatLabel(value: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function resolveActionTemplate(
+  template: string,
+  row: Record<string, unknown>
+): string {
+  return template.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
+    const raw = row[String(key).trim()];
+    return raw == null ? "" : String(raw);
+  });
+}
+
 function renderCellValue(value: unknown, key?: string) {
   const formatted = formatValue(value, key);
 
@@ -169,10 +196,14 @@ function ResultTable({
   columns,
   rows,
   pagination,
+  interactions,
+  onAction,
 }: {
   columns: ToolColumn[];
   rows: Array<Record<string, unknown>>;
   pagination?: ToolPagination;
+  interactions?: ToolInteractions;
+  onAction?: (message: string) => void;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -211,9 +242,9 @@ function ResultTable({
 
   return (
     <div>
-      <div className="overflow-hidden rounded-xl border border-slate-200">
-        <div className="max-h-96 overflow-auto">
-          <table className="min-w-full divide-y divide-slate-100 text-left text-xs">
+      <div className="rounded-xl border border-slate-200" style={{ overflowX: "auto" }}>
+        <div className="max-h-96" style={{ overflowY: "auto" }}>
+          <table className="min-w-full divide-y divide-slate-100 text-left text-xs table-auto">
             <thead className="sticky top-0 z-10 bg-slate-50">
               {table.getHeaderGroups().map((headerGroup) => (
                 <tr key={headerGroup.id}>
@@ -224,13 +255,16 @@ function ResultTable({
                         : flexRender(header.column.columnDef.header, header.getContext())}
                     </th>
                   ))}
+                  {interactions?.mode === "row_actions" && interactions.rowActions.length > 0 && (
+                    <th className="w-24 px-3 py-2" aria-label="Actions" />
+                  )}
                 </tr>
               ))}
             </thead>
             <tbody className="divide-y divide-slate-50 bg-white">
               {table.getRowModel().rows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length} className="px-3 py-10 text-center text-slate-400">
+                  <td colSpan={columns.length + (interactions?.mode === "row_actions" ? 1 : 0)} className="px-3 py-10 text-center text-slate-400">
                     No rows returned.
                   </td>
                 </tr>
@@ -242,6 +276,39 @@ function ResultTable({
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
+                    {interactions?.mode === "row_actions" && interactions.rowActions.length > 0 && (
+                      <td className="px-3 py-2 align-middle">
+                        <div className="flex flex-wrap gap-1.5">
+                          {interactions.rowActions.map((action, index) => {
+                            const resolved = resolveActionTemplate(action.template, row.original);
+                            return (
+                              <button
+                                key={`${action.label}-${index}`}
+                                type="button"
+                                onClick={() => onAction?.(resolved)}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  padding: "2px 10px",
+                                  fontSize: 11,
+                                  fontWeight: 500,
+                                  lineHeight: "16px",
+                                  borderRadius: 9999,
+                                  border: "none",
+                                  cursor: "pointer",
+                                  backgroundColor: action.style === "secondary" ? "#fff" : "#3b82f6",
+                                  color: action.style === "secondary" ? "#475569" : "#fff",
+                                  ...(action.style === "secondary" ? { border: "1px solid #e2e8f0" } : {}),
+                                }}
+                              >
+                                {action.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -249,6 +316,10 @@ function ResultTable({
           </table>
         </div>
       </div>
+
+      {interactions?.prompt && (
+        <p className="mt-2 text-[11px] text-slate-500">{interactions.prompt}</p>
+      )}
 
       {pagination && (
         <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
@@ -292,13 +363,25 @@ function ResultList({ items }: { items: unknown[] }) {
   );
 }
 
-function ResultData({ result }: { result: StructuredToolResult }) {
+function ResultData({
+  result,
+  onAction,
+}: {
+  result: StructuredToolResult;
+  onAction?: (message: string) => void;
+}) {
   const { data } = result;
 
   switch (data.kind) {
     case "table":
       return data.columns && data.rows ? (
-        <ResultTable columns={data.columns} rows={data.rows} pagination={data.pagination} />
+        <ResultTable
+          columns={data.columns}
+          rows={data.rows}
+          pagination={data.pagination}
+          interactions={result.interactions}
+          onAction={onAction}
+        />
       ) : null;
     case "record":
       return data.record ? <ResultRecord record={data.record} /> : null;
@@ -314,7 +397,13 @@ function ResultData({ result }: { result: StructuredToolResult }) {
   }
 }
 
-export function ToolResultView({ result }: { result: StructuredToolResult }) {
+export function ToolResultView({
+  result,
+  onAction,
+}: {
+  result: StructuredToolResult;
+  onAction?: (message: string) => void;
+}) {
   const { context } = result;
   const hasMetrics = context.metrics && Object.keys(context.metrics).length > 0;
   const hasWarnings = context.warnings && context.warnings.length > 0;
@@ -363,7 +452,7 @@ export function ToolResultView({ result }: { result: StructuredToolResult }) {
       )}
 
       {/* Data — the hero */}
-      <ResultData result={result} />
+      <ResultData result={result} onAction={onAction} />
     </div>
   );
 }

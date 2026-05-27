@@ -1,7 +1,25 @@
 import { Config, ConfigSchema } from "./schema.js";
-import { readFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  mkdirSync,
+  readFileSync,
+  existsSync,
+  writeFileSync,
+  accessSync,
+  constants,
+} from "node:fs";
+import { dirname, resolve } from "node:path";
+
+type MutableConfigObject = Record<string, unknown>;
+
+export class ConfigLoadError extends Error {
+  public readonly code: "config_invalid" | "config_unwritable";
+
+  constructor(code: "config_invalid" | "config_unwritable", message: string) {
+    super(message);
+    this.name = "ConfigLoadError";
+    this.code = code;
+  }
+}
 
 /**
  * Loads and validates the server configuration.
@@ -15,8 +33,7 @@ import { fileURLToPath } from "node:url";
  * no silent fallbacks, no half-broken startup.
  */
 export function loadConfig(): Config {
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const configPath = resolve(process.cwd(), "config.json");
+  const configPath = resolveConfigPath();
 
   // Load config from disk if it exists
   let raw: unknown = {};
@@ -24,7 +41,8 @@ export function loadConfig(): Config {
     try {
       raw = JSON.parse(readFileSync(configPath, "utf-8")) as unknown;
     } catch (e) {
-      throw new Error(
+      throw new ConfigLoadError(
+        "config_invalid",
         `Failed to parse config.json at ${configPath}: ${e instanceof Error ? e.message : String(e)}`
       );
     }
@@ -34,9 +52,11 @@ export function loadConfig(): Config {
     );
   }
 
+  const configWithIdentity = ensureServerId(raw, configPath);
+
   // Apply environment variable overrides with dot-path notation
   // e.g., MOODLE_URL -> moodle.url, LOGGING_LEVEL -> logging.level
-  const overrides = applyEnvOverrides(raw);
+  const overrides = applyEnvOverrides(configWithIdentity);
 
   // Validate against schema
   const result = ConfigSchema.safeParse(overrides);
@@ -44,7 +64,8 @@ export function loadConfig(): Config {
     const issues = result.error.issues
       .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
       .join("\n");
-    throw new Error(
+    throw new ConfigLoadError(
+      "config_invalid",
       `Config validation failed:\n${issues}\n\nFix config.json or environment variables and retry.`
     );
   }
@@ -72,6 +93,10 @@ function applyEnvOverrides(raw: unknown): unknown {
     MOODLE_API_VERSION: ["moodle", "apiVersion"],
     LOGGING_LEVEL: ["logging", "level"],
     LOGGING_TOOL_CALL_LOG: ["logging", "toolCallLog"],
+    SERVER_ID: ["server", "id"],
+    SERVER_NAME: ["server", "name"],
+    SERVER_VERSION: ["server", "version"],
+    PLUGINS_LICENSE_KEY: ["plugins", "licenseKey"],
   };
 
   for (const [envKey, path] of Object.entries(envMappings)) {
@@ -90,6 +115,116 @@ function applyEnvOverrides(raw: unknown): unknown {
   }
 
   return cfg;
+}
+
+function ensureServerId(raw: unknown, configPath: string): unknown {
+  const cfg = cloneAsConfigObject(raw);
+  const envServerId = process.env.SERVER_ID?.trim();
+  if (envServerId) {
+    return cfg;
+  }
+
+  const existingId = readNestedString(cfg, ["server", "id"]);
+  if (existingId) {
+    return cfg;
+  }
+
+  assertConfigPathWritable(configPath);
+
+  const generatedId = generateServerId();
+  setNestedValue(cfg, ["server", "id"], generatedId);
+  persistConfig(configPath, cfg);
+
+  console.warn(
+    `Generated persistent server.id ${generatedId} and wrote it to ${configPath}`
+  );
+
+  return cfg;
+}
+
+function cloneAsConfigObject(raw: unknown): MutableConfigObject {
+  if (typeof raw === "object" && raw !== null) {
+    return JSON.parse(JSON.stringify(raw)) as MutableConfigObject;
+  }
+  return {};
+}
+
+function readNestedString(
+  cfg: MutableConfigObject,
+  path: string[]
+): string | undefined {
+  let current: unknown = cfg;
+  for (const key of path) {
+    if (typeof current !== "object" || current === null || !(key in current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === "string" && current.trim() ? current : undefined;
+}
+
+function setNestedValue(
+  cfg: MutableConfigObject,
+  path: string[],
+  value: unknown
+): void {
+  let current: MutableConfigObject = cfg;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    const next = current[key];
+    if (typeof next !== "object" || next === null || Array.isArray(next)) {
+      current[key] = {};
+    }
+    current = current[key] as MutableConfigObject;
+  }
+  current[path[path.length - 1]] = value;
+}
+
+function assertConfigPathWritable(configPath: string): void {
+  const target = existsSync(configPath) ? configPath : dirname(configPath);
+
+  try {
+    if (!existsSync(target)) {
+      mkdirSync(target, { recursive: true });
+    }
+    accessSync(target, constants.W_OK);
+  } catch (e) {
+    throw new ConfigLoadError(
+      "config_unwritable",
+      `server.id is missing and config path is not writable: ${configPath}. ` +
+        `The core must persist a stable server.id. Fix permissions or set a writable config path. ` +
+        `Details: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+}
+
+function persistConfig(configPath: string, cfg: MutableConfigObject): void {
+  try {
+    writeFileSync(configPath, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
+  } catch (e) {
+    throw new ConfigLoadError(
+      "config_unwritable",
+      `Failed to persist generated server.id to ${configPath}: ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+  }
+}
+
+function generateServerId(): string {
+  let suffix = "";
+  while (suffix.length < 8) {
+    suffix += Math.random().toString(36).slice(2);
+  }
+  return `mcp_${suffix.slice(0, 8)}`;
+}
+
+export function resolveConfigPath(): string {
+  const configuredPath = process.env.MOODLE_MCP_CONFIG ?? process.env.MOODLE_MCP_SERVER_CONFIG;
+  if (configuredPath && configuredPath.trim()) {
+    return resolve(configuredPath.trim());
+  }
+  return resolve(process.cwd(), "config.json");
 }
 
 /**

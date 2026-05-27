@@ -10,6 +10,9 @@ import * as getRecentActivity from "./get-recent-activity.js";
 import * as getCourseCompletionReport from "./get-course-completion-report.js";
 import * as getSiteInfo from "./get-site-info.js";
 import * as listCategories from "./list-categories.js";
+import * as getUser from "./get-user.js";
+import * as listUserCourses from "./list-user-courses.js";
+import * as searchUsers from "./search-users.js";
 
 /**
  * Tool module shape — each tool file exports this.
@@ -33,6 +36,9 @@ const TOOL_MODULES: ToolModule[] = [
   getCourseCompletionReport,
   getSiteInfo,
   listCategories,
+  getUser,
+  listUserCourses,
+  searchUsers,
 ];
 
 /**

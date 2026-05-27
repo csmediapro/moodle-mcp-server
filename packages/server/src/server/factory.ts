@@ -6,24 +6,13 @@ import {
 import type { MoodleClient } from "../moodle/client.js";
 import type { MoodleCapabilities } from "../moodle/capabilities.js";
 import type { Authenticator } from "../auth/authenticator.js";
+import { logToolCall } from "../logging/index.js";
+import { zodToJsonSchema } from "../utils/zod-to-json-schema.js";
 import {
   buildToolDefinitions as buildCoreToolDefinitions,
   buildToolHandlers as buildCoreToolHandlers,
 } from "../tools/index.js";
-
-/**
- * A tool module — the contract that both core tools and plugin tools adhere to.
- * Exported here so plugin-loader.ts and factory.ts can share it without circular deps.
- */
-export interface ToolModule {
-  name: string;
-  description: string;
-  inputSchema: unknown;
-  createHandler: (
-    client: MoodleClient,
-    caps: MoodleCapabilities
-  ) => (args: unknown) => Promise<unknown>;
-}
+import type { LoadedPlugin } from "../plugins/contracts.js";
 
 /**
  * Type for a log function used by the factory.
@@ -33,7 +22,7 @@ export type LogFn = (level: "debug" | "info" | "warn" | "error", message: string
 
 /**
  * Shared server factory — creates a fully configured MCP server
- * instance ready for any transport (stdio, Streamable HTTP, etc.).
+ * instance ready for the stdio core and future external wrappers.
  */
 export interface ServerFactoryOptions {
   name: string;
@@ -42,13 +31,55 @@ export interface ServerFactoryOptions {
   capabilities: MoodleCapabilities;
   authenticator: Authenticator;
   log: LogFn;
-  /** Extra tool modules from plugin loader */
-  extraTools?: ToolModule[];
+  /** Extra validated plugin bundles from the plugin loader */
+  extraPlugins?: LoadedPlugin[];
 }
 
 export interface ServerFactoryResult {
   server: Server;
   toolCount: number;
+}
+
+function isZodSchema(schema: unknown): boolean {
+  return !!schema &&
+    typeof schema === "object" &&
+    "_def" in (schema as Record<string, unknown>) &&
+    typeof (schema as { safeParse?: unknown }).safeParse === "function";
+}
+
+function normalizeInputSchema(schema: unknown): Record<string, unknown> {
+  if (isZodSchema(schema)) {
+    return zodToJsonSchema(schema as Parameters<typeof zodToJsonSchema>[0]);
+  }
+
+  if (schema && typeof schema === "object") {
+    return schema as Record<string, unknown>;
+  }
+
+  return { type: "object", properties: {} };
+}
+
+function sanitizeArgsForTelemetry(args: unknown): unknown {
+  if (Array.isArray(args)) {
+    return args.map(sanitizeArgsForTelemetry);
+  }
+
+  if (args && typeof args === "object") {
+    return Object.fromEntries(
+      Object.entries(args as Record<string, unknown>).map(([key, value]) => {
+        if (typeof value === "string" && key.toLowerCase().includes("email")) {
+          const atIndex = value.indexOf("@");
+          if (atIndex > 1) {
+            return [key, `${value[0]}***${value.slice(atIndex)}`];
+          }
+          return [key, "***"];
+        }
+        return [key, sanitizeArgsForTelemetry(value)];
+      })
+    );
+  }
+
+  return args;
 }
 
 export function createServer(opts: ServerFactoryOptions): ServerFactoryResult {
@@ -57,17 +88,31 @@ export function createServer(opts: ServerFactoryOptions): ServerFactoryResult {
   const toolHandlers = buildCoreToolHandlers(opts.moodleClient, opts.capabilities);
 
   // Register plugin tools (if any loaded)
-  for (const mod of opts.extraTools ?? []) {
-    if (toolHandlers[mod.name]) {
-      opts.log("warn", `Plugin tool '${mod.name}' shadows a core tool — skipping`);
-      continue;
+  for (const plugin of opts.extraPlugins ?? []) {
+    for (const mod of plugin.tools) {
+      if (toolHandlers[mod.name]) {
+        opts.log(
+          "warn",
+          `Plugin tool '${mod.name}' from ${plugin.manifest.id} shadows an existing tool — skipping`,
+        );
+        continue;
+      }
+      toolHandlers[mod.name] = mod.createHandler({
+        moodleClient: opts.moodleClient,
+        capabilities: opts.capabilities,
+        log: opts.log,
+        config: {
+          serverName: opts.name,
+          serverVersion: opts.version,
+        },
+        license: plugin.license,
+      });
+      toolDefinitions.push({
+        name: mod.name,
+        description: mod.description,
+        inputSchema: normalizeInputSchema(mod.inputSchema) as never,
+      });
     }
-    toolHandlers[mod.name] = mod.createHandler(opts.moodleClient, opts.capabilities);
-    toolDefinitions.push({
-      name: mod.name,
-      description: mod.description,
-      inputSchema: mod.inputSchema as never,
-    });
   }
 
   // Create MCP server
@@ -107,10 +152,19 @@ export function createServer(opts: ServerFactoryOptions): ServerFactoryResult {
     } finally {
       const durationMs = Date.now() - start;
       const resultSize = result ? JSON.stringify(result).length : undefined;
+      const safeArgs = sanitizeArgsForTelemetry(args);
+      logToolCall({
+        tool: name,
+        args: safeArgs,
+        success,
+        durationMs,
+        resultSize,
+        error,
+      });
       opts.log(
         success ? "info" : "error",
         `Tool: ${name} ${success ? "✓" : "✗"} (${durationMs}ms)`,
-        { tool: name, args, success, durationMs, resultSize, error }
+        { tool: name, args: safeArgs, success, durationMs, resultSize, error }
       );
     }
 

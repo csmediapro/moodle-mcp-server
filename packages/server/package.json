@@ -1,14 +1,14 @@
 {
-  "name": "@csmediapro/moodlereport",
+  "name": "@csmediapro/moodle-mcp-server",
   "version": "0.1.0",
-  "description": "MoodleReport — MCP server for AI-powered Moodle LMS analytics",
+  "description": "moodle-mcp-server — MCP server for Moodle LMS Reports and Analytics",
   "license": "AGPL-3.0",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "moodlereport": "dist/index.js",
-    "moodlereport-http": "dist/entry/http.js"
+    "moodle-mcp-server": "dist/index.js",
+    "moodlereport": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

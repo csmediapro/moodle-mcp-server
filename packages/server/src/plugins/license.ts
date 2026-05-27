@@ -1,3 +1,5 @@
+import type { LicenseResult } from "./contracts.js";
+
 /**
  * License key validation utility.
  *
@@ -10,13 +12,6 @@
  * provides the strong legal protection.
  */
 
-export interface LicenseValidationResult {
-  valid: boolean;
-  error?: string;
-  identity?: string;
-  expiresAt?: string;
-}
-
 const LICENSE_KEY_PATTERN = /^moodle-lic-[a-zA-Z0-9]{32}$/;
 
 /**
@@ -26,24 +21,38 @@ const LICENSE_KEY_PATTERN = /^moodle-lic-[a-zA-Z0-9]{32}$/;
  * key, verify expiration, etc. For now it validates format + an
  * embedded checksum.
  */
-export function validateLicense(key?: string): LicenseValidationResult {
+export function validateLicense(key?: string): LicenseResult {
   if (!key) {
-    return { valid: false, error: "No license key provided. Set MOODLE_PLUGIN_KEY or plugins.licenseKey in config.json." };
+    return {
+      status: "missing",
+      reason: "No license key provided. Set MOODLE_PLUGIN_KEY or plugins.licenseKey in config.json.",
+      featuresEnabled: [],
+    };
   }
 
   // Validate format
   if (!LICENSE_KEY_PATTERN.test(key)) {
-    return { valid: false, error: "Invalid license key format. Expected: moodle-lic-[32 hex chars]." };
+    return {
+      status: "invalid",
+      reason: "Invalid license key format. Expected: moodle-lic-[32 hex chars].",
+      featuresEnabled: [],
+    };
   }
 
   // Extract and verify the embedded checksum
   const hexPart = key.replace("moodle-lic-", "");
   if (!verifyChecksum(hexPart)) {
-    return { valid: false, error: "License key checksum failed — key may be malformed." };
+    return {
+      status: "invalid",
+      reason: "License key checksum failed — key may be malformed.",
+      featuresEnabled: [],
+    };
   }
 
   return {
-    valid: true,
+    status: "valid",
+    tier: "premium",
+    featuresEnabled: ["premium"],
     identity: `site:${hexPart.slice(0, 8)}`,
   };
 }
