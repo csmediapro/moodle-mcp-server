@@ -1,0 +1,9 @@
+{
+  "name": "@example/moodle-mcp-hello-plugin",
+  "version": "1.0.0",
+  "description": "Minimal standalone plugin for moodle-mcp-server",
+  "type": "module",
+  "main": "index.js",
+  "license": "AGPL-3.0",
+  "private": true
+}

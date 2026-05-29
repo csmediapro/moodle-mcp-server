@@ -217,3 +217,4 @@ That is deliberate. Keep the first contract small enough to stay stable.
 
 - [Plugin Contract](./CONTRACT.md)
 - `packages/server/src/plugins/contracts.ts`
+- `examples/plugins/hello-plugin`

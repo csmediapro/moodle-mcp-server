@@ -10,7 +10,7 @@ Instead of learning report builders, writing SQL, or exporting CSVs, you ask que
 
 ## Features
 
-- **8 core query tools** — course catalog, completion reports, user enrollment, assignments, activity feeds, category navigation, and more
+- **11 core query tools** — course catalog, completion reports, user enrollment, assignments, activity feeds, category navigation, and more
 - **LLM-agnostic** — works with Claude, GPT, Gemini, Ollama, or any MCP-compatible AI client
 - **Zero LMS modification** — uses Moodle's existing Web Services API, no plugin installation required
 - **Smart caching** — course catalog loaded into memory at startup, subsequent queries nearly instant
@@ -173,6 +173,9 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 | `get_course_completion_report` | Server-side join: users × completion status |
 | `list_categories` | Full hierarchy with exact parent resolution |
 | `get_site_info` | Instance overview — site name, version, course count |
+| `get_user` | Detail view for a Moodle user |
+| `list_user_courses` | Courses for a specific user |
+| `search_users` | User search by exact profile fields |
 
 ### Premium Plugins (available separately)
 
@@ -212,6 +215,7 @@ The OSS core intentionally ships with `stdio` only. Any network-facing wrapper, 
 
 - [Plugin Contract](./docs/plugins/CONTRACT.md)
 - [Creating Plugins](./docs/plugins/CREATING-PLUGINS.md)
+- [Hello Plugin Example](./examples/plugins/hello-plugin)
 
 ---
 

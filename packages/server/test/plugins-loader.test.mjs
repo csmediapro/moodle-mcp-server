@@ -1,0 +1,151 @@
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import test from "node:test";
+
+import { loadPlugins } from "../dist/plugins/loader.js";
+
+const VALID_LICENSE = "moodle-lic-6e20f716d2d213cd5fe9d5f5e216040a";
+
+function baseContext(overrides = {}) {
+  const logs = [];
+  const events = [];
+
+  return {
+    ctx: {
+      moodleClient: {},
+      capabilities: { functions: new Set(), probedAt: new Date("2026-01-01T00:00:00.000Z") },
+      log: (level, message, data) => logs.push({ level, message, data }),
+      config: { serverName: "Test Server", serverVersion: "0.1.0" },
+      emitStatus: (event) => events.push(event),
+      ...overrides,
+    },
+    logs,
+    events,
+  };
+}
+
+async function writePlugin(dir, source) {
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "index.js"), source, "utf8");
+}
+
+async function tempPluginDir(name) {
+  return mkdtemp(join(tmpdir(), `moodle-loader-${name}-`));
+}
+
+function pluginSource({
+  id = "com.example.test",
+  requiresLicense = false,
+  requiredCapabilities = [],
+  initialize = "",
+} = {}) {
+  return `
+    export const plugin = {
+      manifest: {
+        id: ${JSON.stringify(id)},
+        name: "Test Plugin",
+        version: "1.0.0",
+        apiVersion: "1",
+        description: "Test plugin",
+        requiresLicense: ${JSON.stringify(requiresLicense)},
+        requiredCapabilities: ${JSON.stringify(requiredCapabilities)},
+        tools: ["test_plugin_tool"]
+      },
+      ${initialize}
+      tools: [{
+        name: "test_plugin_tool",
+        description: "Test tool",
+        inputSchema: { type: "object", properties: {} },
+        createHandler: (ctx) => async () => ({ server: ctx.config.serverName, licensed: ctx.license.status === "valid" })
+      }]
+    };
+    export default plugin;
+  `;
+}
+
+test("loadPlugins loads a valid standalone package directory", async () => {
+  const dir = await tempPluginDir("valid");
+  await writePlugin(dir, pluginSource());
+
+  const { ctx, events } = baseContext();
+  const loaded = await loadPlugins([{ path: dir, requiresLicense: false }], ctx);
+
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].manifest.id, "com.example.test");
+  assert.equal(loaded[0].tools[0].name, "test_plugin_tool");
+  assert.equal(events.find((event) => event.type === "plugin_loaded")?.pluginId, "com.example.test");
+});
+
+test("loadPlugins loads the checked-in hello plugin example", async () => {
+  const examplePath = resolve(process.cwd(), "../../examples/plugins/hello-plugin");
+
+  const { ctx } = baseContext();
+  const loaded = await loadPlugins([{ path: examplePath, requiresLicense: false }], ctx);
+
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].manifest.id, "com.example.hello");
+
+  const handler = loaded[0].tools[0].createHandler({
+    moodleClient: ctx.moodleClient,
+    capabilities: ctx.capabilities,
+    log: ctx.log,
+    config: ctx.config,
+    license: loaded[0].license,
+  });
+
+  assert.deepEqual(await handler({ name: "Moodle" }), {
+    ok: true,
+    greeting: "Hello, Moodle",
+    server: "Test Server",
+    licensed: true,
+  });
+});
+
+test("loadPlugins skips licensed plugins when no license is present", async () => {
+  const dir = await tempPluginDir("missing-license");
+  await writePlugin(dir, pluginSource({ requiresLicense: true }));
+
+  const { ctx, events } = baseContext();
+  const loaded = await loadPlugins([{ path: dir, requiresLicense: false }], ctx);
+
+  assert.equal(loaded.length, 0);
+  assert.equal(events.find((event) => event.reasonCode === "license_missing")?.pluginId, "com.example.test");
+});
+
+test("loadPlugins loads licensed plugins when a valid license is present", async () => {
+  const dir = await tempPluginDir("valid-license");
+  await writePlugin(dir, pluginSource({ requiresLicense: true }));
+
+  const { ctx } = baseContext();
+  const loaded = await loadPlugins([{ path: dir, requiresLicense: false }], ctx, VALID_LICENSE);
+
+  assert.equal(loaded.length, 1);
+  assert.equal(loaded[0].license.status, "valid");
+});
+
+test("loadPlugins skips plugins with missing required capabilities", async () => {
+  const dir = await tempPluginDir("missing-cap");
+  await writePlugin(dir, pluginSource({ requiredCapabilities: ["gradereport_user_get_grade_items"] }));
+
+  const { ctx, events } = baseContext();
+  const loaded = await loadPlugins([{ path: dir, requiresLicense: false }], ctx);
+
+  assert.equal(loaded.length, 0);
+  assert.equal(events.find((event) => event.reasonCode === "capability_missing")?.pluginId, "com.example.test");
+});
+
+test("loadPlugins skips plugins whose initialize hook fails", async () => {
+  const dir = await tempPluginDir("init-fails");
+  await writePlugin(
+    dir,
+    pluginSource({ initialize: "initialize: () => { throw new Error('nope'); }," }),
+  );
+
+  const { ctx, events } = baseContext();
+  const loaded = await loadPlugins([{ path: dir, requiresLicense: false }], ctx);
+
+  assert.equal(loaded.length, 0);
+  assert.equal(events.find((event) => event.reasonCode === "initialize_failed")?.pluginId, "com.example.test");
+});

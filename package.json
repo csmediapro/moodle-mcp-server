@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "server:build": "npm run build -w packages/server",
+    "server:test": "npm run test -w packages/server",
     "server:dev": "npm run dev -w packages/server",
     "server:start": "node packages/server/dist/index.js",
     "client:dev": "npm run dev -w packages/client",
