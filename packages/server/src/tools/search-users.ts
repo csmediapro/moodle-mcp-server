@@ -6,6 +6,11 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
+import {
+  loadSchema,
+  getDisplayFields,
+  normalizeCustomFields,
+} from "../schema/user-fields.js";
 
 export const name = "search_users";
 
@@ -44,8 +49,19 @@ type MoodleUser = {
   country?: string;
   firstaccess?: number;
   lastaccess?: number;
+  lastcourseaccess?: number;
   suspended?: boolean;
   confirmed?: boolean;
+  auth?: string;
+  lang?: string;
+  timezone?: string;
+  description?: string;
+  customfields?: Array<{
+    type: string;
+    value: string;
+    name: string;
+    shortname: string;
+  }>;
 };
 
 type MoodleUserSearchResponse = {
@@ -53,8 +69,9 @@ type MoodleUserSearchResponse = {
   warnings?: Array<{ item?: string; itemid?: number; warningcode?: string; message?: string }>;
 };
 
-function normalizeUser(user: MoodleUser) {
-  return {
+export function normalizeUser(user: MoodleUser) {
+  const customFields = normalizeCustomFields(user.customfields);
+  const record = {
     id: user.id,
     fullname: user.fullname ?? `${user.firstname} ${user.lastname}`.trim(),
     firstname: user.firstname,
@@ -68,8 +85,19 @@ function normalizeUser(user: MoodleUser) {
     country: user.country ?? null,
     suspended: Boolean(user.suspended),
     confirmed: user.confirmed ?? null,
+    auth: user.auth ?? null,
+    lang: user.lang ?? null,
+    timezone: user.timezone ?? null,
+    description: user.description ?? null,
     lastaccess: user.lastaccess ? new Date(user.lastaccess * 1000).toISOString() : null,
     firstaccess: user.firstaccess ? new Date(user.firstaccess * 1000).toISOString() : null,
+    lastcourseaccess: user.lastcourseaccess ? new Date(user.lastcourseaccess * 1000).toISOString() : null,
+  };
+
+  return {
+    ...customFields,
+    ...record,
+    customfields: customFields,
   };
 }
 
@@ -131,6 +159,45 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
     const pagedUsers = allUsers.slice(parsed.offset, parsed.offset + parsed.limit);
     const warnings = (result.warnings ?? []).map((warning) => warning.message).filter(Boolean) as string[];
 
+    // Warn if Moodle returned invalidfieldparameter for custom field filters
+    const hasInvalidFieldWarning = warnings.some((w) => w.includes("invalidfieldparameter"));
+    if (hasInvalidFieldWarning) {
+      warnings.push(
+        "Some search criteria were ignored by Moodle. Custom profile fields (e.g. school) " +
+        "are not supported as Moodle-native search filters. Use list_course_users for " +
+        "course-scoped filtering, or refine with standard fields.",
+      );
+    }
+
+    // Load the user field schema for dynamic table columns
+    const schema = loadSchema();
+    const tableColumns = schema
+      ? getDisplayFields(schema)
+      : [
+          { key: "id", label: "User ID" },
+          { key: "fullname", label: "Name" },
+          { key: "email", label: "Email" },
+          { key: "username", label: "Username" },
+          { key: "department", label: "Department" },
+          { key: "institution", label: "Institution" },
+          { key: "lastaccess", label: "Last Access" },
+          { key: "suspended", label: "Suspended" },
+        ];
+
+    // Collect all field keys that exist in the data (for context.fields)
+    const fieldKeys = new Set<string>();
+    for (const user of pagedUsers) {
+      for (const key of Object.keys(user)) {
+        fieldKeys.add(key);
+      }
+    }
+    // Add custom field keys if any user has them
+    for (const user of pagedUsers) {
+      for (const key of Object.keys(user.customfields)) {
+        fieldKeys.add(`customfields.${key}`);
+      }
+    }
+
     logger.debug("User search completed", {
       event: "search_users_completed",
       criteria: criteriaEntries.map(([key]) => key),
@@ -138,6 +205,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       returned: pagedUsers.length,
       offset: parsed.offset,
       limit: parsed.limit,
+      schemaUsed: !!schema,
     });
 
     return buildToolResponse({
@@ -150,16 +218,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       data: {
         kind: "table",
         title: "User Search Results",
-        columns: [
-          { key: "id", label: "User ID" },
-          { key: "fullname", label: "Name" },
-          { key: "email", label: "Email" },
-          { key: "username", label: "Username" },
-          { key: "department", label: "Department" },
-          { key: "institution", label: "Institution" },
-          { key: "lastaccess", label: "Last Access" },
-          { key: "suspended", label: "Suspended" },
-        ],
+        columns: tableColumns,
         rows: pagedUsers,
         pagination: {
           offset: parsed.offset,
@@ -179,10 +238,12 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           offset: parsed.offset,
           limit: parsed.limit,
           filters_applied: criteriaEntries.length,
+          schema_used: !!schema,
         },
         highlights: [
           `Filters: ${criteriaEntries.map(([key, value]) => `${key}=${value}`).join(", ")}`,
           ...(allUsers.length > parsed.limit ? [`Results were truncated to limit ${parsed.limit}.`] : []),
+          ...(schema ? [] : ["No user field schema found — using default table columns. Run refresh_user_field_schema to customize."]),
         ],
         warnings: warnings.length > 0 ? warnings : undefined,
         suggestedQueries: [
@@ -190,23 +251,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           "List courses for user [User ID]",
           "List users in course [Course ID]",
         ],
-        fields: [
-          "id",
-          "fullname",
-          "firstname",
-          "lastname",
-          "email",
-          "username",
-          "idnumber",
-          "department",
-          "institution",
-          "city",
-          "country",
-          "lastaccess",
-          "firstaccess",
-          "suspended",
-          "confirmed",
-        ],
+        fields: [...fieldKeys].sort(),
       },
       interactions: allUsers.length > 1
         ? {

@@ -13,6 +13,7 @@ import * as listCategories from "./list-categories.js";
 import * as getUser from "./get-user.js";
 import * as listUserCourses from "./list-user-courses.js";
 import * as searchUsers from "./search-users.js";
+import * as userSchema from "./user-schema.js";
 
 /**
  * Tool module shape — each tool file exports this.
@@ -41,15 +42,44 @@ const TOOL_MODULES: ToolModule[] = [
   searchUsers,
 ];
 
+// Schema tools follow a slightly different module shape:
+// - get_user_field_schema + update_user_field_schema are local-only (no Moodle client needed)
+// - refresh_user_field_schema needs the Moodle client for discovery
+const SCHEMA_DEFINITIONS: Tool[] = [
+  {
+    name: userSchema.getSchemaName,
+    description: userSchema.getSchemaDescription,
+    inputSchema: zodToJsonSchema(userSchema.getSchemaInput),
+  },
+  {
+    name: userSchema.refreshSchemaName,
+    description: userSchema.refreshSchemaDescription,
+    inputSchema: zodToJsonSchema(userSchema.refreshSchemaInput),
+  },
+  {
+    name: userSchema.updateSchemaName,
+    description: userSchema.updateSchemaDescription,
+    inputSchema: zodToJsonSchema(userSchema.updateSchemaInput),
+  },
+  {
+    name: userSchema.reorderSchemaName,
+    description: userSchema.reorderSchemaDescription,
+    inputSchema: zodToJsonSchema(userSchema.reorderSchemaInput),
+  },
+];
+
 /**
  * Build Tool definitions array for MCP server registration.
  */
 export function buildToolDefinitions(): Tool[] {
-  return TOOL_MODULES.map((mod) => ({
-    name: mod.name,
-    description: mod.description,
-    inputSchema: zodToJsonSchema(mod.inputSchema),
-  }));
+  return [
+    ...TOOL_MODULES.map((mod) => ({
+      name: mod.name,
+      description: mod.description,
+      inputSchema: zodToJsonSchema(mod.inputSchema),
+    })),
+    ...SCHEMA_DEFINITIONS,
+  ];
 }
 
 /**
@@ -64,6 +94,12 @@ export function buildToolHandlers(
   for (const mod of TOOL_MODULES) {
     handlers[mod.name] = mod.createHandler(client, caps);
   }
+
+  // Schema tools
+  handlers[userSchema.getSchemaName] = userSchema.createGetSchemaHandler();
+  handlers[userSchema.refreshSchemaName] = userSchema.createRefreshSchemaHandler(client);
+  handlers[userSchema.updateSchemaName] = userSchema.createUpdateSchemaHandler();
+  handlers[userSchema.reorderSchemaName] = userSchema.createReorderSchemaHandler();
 
   return handlers;
 }

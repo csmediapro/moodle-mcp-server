@@ -5,6 +5,7 @@ import { z } from "zod";
  *
  * Only handles the subset of Zod we use for tool input schemas:
  * - z.object() with primitive fields (string, number, boolean, enum)
+ * - nested z.object() and z.record()
  * - .optional(), .default(), .describe()
  * - .int(), .min(), .max()
  *
@@ -94,6 +95,41 @@ function buildPrimitiveSchema(
   field: z.ZodTypeAny,
   description?: string
 ): object {
+  if (field instanceof z.ZodObject) {
+    const nestedRequired: string[] = [];
+    const properties: Record<string, object> = {};
+
+    for (const [key, nestedField] of Object.entries(field.shape)) {
+      const fieldInfo = extractField(nestedField as z.ZodTypeAny);
+      properties[key] = fieldInfo.schema;
+      if (fieldInfo.required) {
+        nestedRequired.push(key);
+      }
+    }
+
+    return {
+      type: "object",
+      properties,
+      ...(nestedRequired.length > 0 ? { required: nestedRequired } : {}),
+      ...(description ? { description } : {}),
+    };
+  }
+
+  if (field instanceof z.ZodRecord) {
+    const valueType = (field as unknown as {
+      _def: { valueType: z.ZodTypeAny };
+    })._def.valueType;
+
+    return {
+      type: "object",
+      additionalProperties: buildPrimitiveSchema(
+        unwrapToBaseSchema(valueType),
+        valueType.description,
+      ),
+      ...(description ? { description } : {}),
+    };
+  }
+
   if (field instanceof z.ZodNumber) {
     const schema: Record<string, unknown> = { type: "number" };
     if (description) schema.description = description;

@@ -43,7 +43,7 @@ export interface ToolInteractionAction {
   style?: "primary" | "secondary";
 }
 
-export interface ToolInteractionsBlock {
+export interface ToolRowInteractionsBlock {
   mode: "row_actions";
   prompt?: string;
   submitAs?: "user_message" | "assistant_context";
@@ -51,6 +51,17 @@ export interface ToolInteractionsBlock {
   rowLabelFields?: string[];
   rowActions: ToolInteractionAction[];
 }
+
+export interface ToolActionInteractionsBlock {
+  mode: "tool_actions";
+  prompt?: string;
+  submitAs?: "user_message" | "assistant_context";
+  actions: ToolInteractionAction[];
+}
+
+export type ToolInteractionsBlock =
+  | ToolRowInteractionsBlock
+  | ToolActionInteractionsBlock;
 
 export interface ToolMetaBlock {
   tool: string;
@@ -113,6 +124,7 @@ export function buildToolErrorResponse(input: {
   highlights?: string[];
   suggestedQueries?: string[];
   warnings?: string[];
+  interactions?: ToolInteractionsBlock;
 }): ToolResponse {
   return buildToolResponse({
     ok: false,
@@ -128,5 +140,6 @@ export function buildToolErrorResponse(input: {
       suggestedQueries: input.suggestedQueries,
       warnings: input.warnings,
     },
+    interactions: input.interactions,
   });
 }

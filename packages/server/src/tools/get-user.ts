@@ -6,13 +6,14 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
+import { normalizeCustomFields } from "../schema/user-fields.js";
 
 export const name = "get_user";
 
 export const description =
   "Fetch one Moodle user by exact ID, email, or username. " +
   "Provide exactly one of id, email, or username. " +
-  "Returns a single structured user record.";
+  "Returns a single structured user record including any custom profile fields.";
 
 export const inputSchema = z.object({
   id: z.number().int().positive().optional().describe("Exact Moodle user ID"),
@@ -37,12 +38,26 @@ type MoodleUser = {
   country?: string;
   firstaccess?: number;
   lastaccess?: number;
+  lastcourseaccess?: number;
   suspended?: boolean;
   confirmed?: boolean;
   auth?: string;
+  lang?: string;
+  timezone?: string;
+  description?: string;
+  descriptionformat?: number;
+  phone2?: string;
+  customfields?: Array<{
+    type: string;
+    value: string;
+    name: string;
+    shortname: string;
+  }>;
 };
 
 function normalizeUser(user: MoodleUser) {
+  const customFields = normalizeCustomFields(user.customfields);
+
   return {
     id: user.id,
     username: user.username,
@@ -58,8 +73,14 @@ function normalizeUser(user: MoodleUser) {
     auth: user.auth ?? null,
     suspended: Boolean(user.suspended),
     confirmed: user.confirmed ?? null,
+    lang: user.lang ?? null,
+    timezone: user.timezone ?? null,
+    description: user.description ?? null,
+    phone2: user.phone2 ?? null,
     firstaccess: user.firstaccess ? new Date(user.firstaccess * 1000).toISOString() : null,
     lastaccess: user.lastaccess ? new Date(user.lastaccess * 1000).toISOString() : null,
+    lastcourseaccess: user.lastcourseaccess ? new Date(user.lastcourseaccess * 1000).toISOString() : null,
+    customfields: customFields,
   };
 }
 
@@ -149,6 +170,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
     }
 
     const record = normalizeUser(users[0]);
+    const hasCustomFields = Object.keys(record.customfields).length > 0;
 
     return buildToolResponse({
       meta: {
@@ -166,19 +188,25 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       context: {
         summary:
           record.lastaccess
-            ? `${record.fullname} was found and has logged into Moodle before.`
+            ? `${record.fullname} was found and has logged into Moodle before.` +
+              (hasCustomFields ? ` Custom profile fields are available.` : "")
             : `${record.fullname} was found, but there is no recorded Moodle access timestamp yet.`,
         metrics: {
           id: record.id,
           suspended: record.suspended,
           confirmed: record.confirmed,
+          ...(hasCustomFields ? { customFieldCount: Object.keys(record.customfields).length } : {}),
         },
         highlights: [
           `Lookup field: ${field}`,
+          ...(hasCustomFields
+            ? [`Custom fields: ${Object.entries(record.customfields).map(([k, v]) => `${k}=${v}`).join(", ")}`]
+            : []),
         ],
         suggestedQueries: [
           `List courses for user ${record.id}`,
           `List users in course [Course ID]`,
+          `Get completion report for user ${record.id} in course [Course ID]`,
         ],
         fields: Object.keys(record),
       },

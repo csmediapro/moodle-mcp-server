@@ -11,9 +11,11 @@ import {
 } from "@tanstack/react-table";
 import {
   AlertTriangle,
+  Check,
   ChevronDown,
   ChevronUp,
-  Database,
+  RefreshCw,
+  X,
 } from "lucide-react";
 
 type ToolDataKind = "table" | "record" | "list" | "none";
@@ -37,7 +39,7 @@ interface ToolInteractionAction {
   style?: "primary" | "secondary";
 }
 
-interface ToolInteractions {
+interface ToolRowInteractions {
   mode: "row_actions";
   prompt?: string;
   submitAs?: "user_message" | "assistant_context";
@@ -45,6 +47,15 @@ interface ToolInteractions {
   rowLabelFields?: string[];
   rowActions: ToolInteractionAction[];
 }
+
+interface ToolActionInteractions {
+  mode: "tool_actions";
+  prompt?: string;
+  submitAs?: "user_message" | "assistant_context";
+  actions: ToolInteractionAction[];
+}
+
+type ToolInteractions = ToolRowInteractions | ToolActionInteractions;
 
 export interface StructuredToolResult {
   ok?: boolean;
@@ -163,6 +174,26 @@ function resolveActionTemplate(
 
 function renderCellValue(value: unknown, key?: string) {
   const formatted = formatValue(value, key);
+
+  if ((key === "display" || key === "filterable") && typeof value === "boolean") {
+    return value ? (
+      <span
+        aria-label="Enabled"
+        title="Enabled"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 ring-1 ring-inset ring-emerald-300"
+      >
+        <Check className="h-3.5 w-3.5" />
+      </span>
+    ) : (
+      <span
+        aria-label="Disabled"
+        title="Disabled"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-rose-700 ring-1 ring-inset ring-rose-300"
+      >
+        <X className="h-3.5 w-3.5" />
+      </span>
+    );
+  }
 
   if (key === "status" && typeof formatted === "string") {
     const tone =
@@ -379,7 +410,7 @@ function ResultData({
           columns={data.columns}
           rows={data.rows}
           pagination={data.pagination}
-          interactions={result.interactions}
+          interactions={result.interactions?.mode === "row_actions" ? result.interactions : undefined}
           onAction={onAction}
         />
       ) : null;
@@ -395,6 +426,41 @@ function ResultData({
         </div>
       );
   }
+}
+
+function ToolActions({
+  interactions,
+  onAction,
+}: {
+  interactions?: ToolInteractions;
+  onAction?: (message: string) => void;
+}) {
+  if (!interactions || interactions.mode !== "tool_actions" || interactions.actions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {interactions.actions.map((action, index) => (
+        <button
+          key={`${action.label}-${index}`}
+          type="button"
+          onClick={() => onAction?.(action.template)}
+          className={
+            action.style === "secondary"
+              ? "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"
+              : "inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-600"
+          }
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          <span>{action.label}</span>
+        </button>
+      ))}
+      {interactions.prompt && (
+        <span className="text-[11px] text-slate-500">{interactions.prompt}</span>
+      )}
+    </div>
+  );
 }
 
 export function ToolResultView({
@@ -450,6 +516,8 @@ export function ToolResultView({
           </div>
         </div>
       )}
+
+      <ToolActions interactions={result.interactions} onAction={onAction} />
 
       {/* Data — the hero */}
       <ResultData result={result} onAction={onAction} />
