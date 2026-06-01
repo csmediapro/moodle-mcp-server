@@ -10,12 +10,11 @@ Instead of learning report builders, writing SQL, or exporting CSVs, you ask que
 
 ## Features
 
-- **11 core query tools** — course catalog, completion reports, user enrollment, assignments, activity feeds, category navigation, and more
+- **14 core query tools** — course catalog, completion reports, user enrollment, assignments, activity feeds, category navigation, and more
 - **LLM-agnostic** — works with Claude, GPT, Gemini, Ollama, or any MCP-compatible AI client
 - **Zero LMS modification** — uses Moodle's existing Web Services API, no plugin installation required
 - **Smart caching** — course catalog loaded into memory at startup, subsequent queries nearly instant
 - **Read-only** — never modifies Moodle data, safe for production
-- **Self-hosted** — all data stays on your infrastructure
 - **Plugin-extensible** — drop new tool modules into a directory, they auto-register
 
 ---
@@ -167,15 +166,17 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 |---|---|
 | `list_courses` | Full course catalog with category drill-down |
 | `get_course` | Detail view for any course |
-| `list_course_users` | Enrolled users with roles and access data |
+| `list_course_users` | Enrolled users with roles and access data (now supports course name search with interactive selection) |
 | `list_assignments` | All assignments with due dates |
 | `get_recent_activity` | Activity feed for any course |
 | `get_course_completion_report` | Server-side join: users × completion status |
+| `get_user_progress_report` | User progress report showing courses, grades, and completion status (now supports course name search) |
 | `list_categories` | Full hierarchy with exact parent resolution |
 | `get_site_info` | Instance overview — site name, version, course count |
 | `get_user` | Detail view for a Moodle user |
 | `list_user_courses` | Courses for a specific user |
 | `search_users` | User search by exact profile fields |
+| `search_courses_by_name` | Search for courses by name with partial matching and interactive selection |
 
 ### Premium Plugins (available separately)
 
