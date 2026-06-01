@@ -6,6 +6,7 @@ import {
   buildToolResponse,
 } from "./response-types.js";
 import { getCategories, getCourses } from "./cache.js";
+import { searchCoursesByName } from "./search-courses-by-name.js";
 
 /**
  * list_course_users — List users enrolled in a specific course or category.
@@ -19,15 +20,17 @@ export const name = "list_course_users";
 
 export const description =
   "List enrolled users in a specific Moodle course or across all courses in a specific LMS category. " +
-  "Provide exactly one of courseid or categoryid. " +
+  "Provide exactly one of courseid, coursename, or categoryid. " +
   "Returns user ID, full name, email, department, institution, " +
   "last access timestamps, and enrollment roles. " +
   "Category mode deduplicates overlapping users across courses before returning results. " +
   "Use an exact category ID from list_categories when working at category scope.";
 
 export const inputSchema = z.object({
-  /** Course ID */
+  /** Course ID (numeric) */
   courseid: z.number().int().positive().optional().describe("Moodle course ID"),
+  /** Course name (text) */
+  coursename: z.string().optional().describe("Moodle course name for partial matching"),
   /** Category ID */
   categoryid: z
     .number()
@@ -52,8 +55,11 @@ export const inputSchema = z.object({
     .optional()
     .default(0)
     .describe("Pagination offset"),
-}).refine((value) => (value.courseid == null) !== (value.categoryid == null), {
-  message: "Provide exactly one of courseid or categoryid",
+}).refine((value) => {
+  const provided = [value.courseid, value.coursename, value.categoryid].filter(v => v != null).length;
+  return provided === 1;
+}, {
+  message: "Provide exactly one of courseid, coursename, or categoryid",
   path: ["courseid"],
 });
 
@@ -104,10 +110,49 @@ async function fetchCourseUsers(
   });
 }
 
+/**
+ * Resolve course identifier (ID or name) to a course ID
+ * @param client Moodle client
+ * @param courseIdentifier Course ID (numeric) or course name
+ * @returns Resolved course ID or null if not found
+ */
+async function resolveCourseIdentifier(
+  client: MoodleClient,
+  courseIdentifier: string | number
+): Promise<number | null> {
+  // Check if it's a numeric ID
+  if (typeof courseIdentifier === 'number') {
+    return courseIdentifier;
+  }
+  
+  const courseId = parseInt(courseIdentifier, 10);
+  if (!isNaN(courseId) && courseId > 0) {
+    return courseId;
+  }
+
+  // It's a course name, search for it
+  const courses = await getCourses(client);
+  const categories = await getCategories(client);
+  
+  const matchingCourses = searchCoursesByName(courses, categories, courseIdentifier, 10);
+  
+  if (matchingCourses.length === 0) {
+    return null; // No matches found
+  }
+  
+  if (matchingCourses.length === 1) {
+    return matchingCourses[0].id; // Return the single match
+  }
+  
+  // Multiple matches - this should be handled by the calling function
+  return null;
+}
+
 export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
   return async (args: unknown) => {
     const parsed = inputSchema.parse(args) as {
       courseid?: number;
+      coursename?: string;
       categoryid?: number;
       limit: number;
       offset: number;
@@ -123,11 +168,11 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           "I could not list enrolled users because this Moodle token does not expose the enrolled-user API.",
         meta: {
           tool: name,
-          title: parsed.courseid != null
-            ? `Enrolled Users — Course ${parsed.courseid}`
+          title: parsed.courseid != null || parsed.coursename != null
+            ? `Enrolled Users — Course ${parsed.courseid ?? parsed.coursename}`
             : `Enrolled Users — Category ${parsed.categoryid}`,
-          entity: parsed.courseid != null ? "course" : "course_category",
-          entityId: parsed.courseid ?? parsed.categoryid,
+          entity: parsed.courseid != null || parsed.coursename != null ? "course" : "course_category",
+          entityId: parsed.categoryid,
           resultCount: 0,
         },
         suggestedQueries: [
@@ -138,11 +183,97 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       });
     }
 
+    // Handle course name resolution if provided
+    let resolvedCourseId: number | undefined = undefined;
+    if (parsed.coursename) {
+      const resolvedId = await resolveCourseIdentifier(client, parsed.coursename);
+      
+      if (resolvedId === null) {
+        // Check if it's a name that resulted in multiple matches
+        const courses = await getCourses(client);
+        const categories = await getCategories(client);
+        const matchingCourses = searchCoursesByName(courses, categories, parsed.coursename, 10);
+        
+        if (matchingCourses.length > 1) {
+          // Return interactive selection for multiple matches
+          return buildToolResponse({
+            meta: {
+              tool: name,
+              title: `Select Course for User List`,
+              entity: "course",
+              resultCount: matchingCourses.length,
+            },
+            data: {
+              kind: "table",
+              title: `Multiple Courses Found — "${parsed.coursename}"`,
+              columns: [
+                { key: "id", label: "Course ID" },
+                { key: "fullname", label: "Full Name" },
+                { key: "shortname", label: "Short Name" },
+                { key: "categoryname", label: "Category" },
+                { key: "visible", label: "Visible" },
+              ],
+              rows: matchingCourses,
+            },
+            context: {
+              summary: `Found ${matchingCourses.length} courses matching "${parsed.coursename}". Please select the correct course.`,
+              metrics: {
+                searchTerm: parsed.coursename,
+                returned: matchingCourses.length,
+                total: matchingCourses.length,
+              },
+              fields: ["id", "fullname", "shortname", "categoryname", "visible"],
+            },
+            interactions: {
+              mode: "row_actions",
+              prompt: "Multiple courses matched. Select the correct course to continue.",
+              submitAs: "user_message",
+              rowKey: "id",
+              rowLabelFields: ["fullname", "shortname"],
+              rowActions: [
+                {
+                  type: "button",
+                  label: "Select",
+                  template: `list_course_users {{id}}`,
+                  style: "primary",
+                },
+              ],
+            },
+          });
+        } else {
+          // No matches found
+          return buildToolErrorResponse({
+            error: {
+              code: "course_not_found",
+              message: `No course found matching "${parsed.coursename}"`,
+              kind: "not_found",
+              canRetry: true,
+              actionRequired: "Try a different course name or use a course ID.",
+            },
+            summary: `No course found matching "${parsed.coursename}".`,
+            meta: {
+              tool: name,
+              title: `Enrolled Users — Course Search`,
+              entity: "course",
+              resultCount: 0,
+            },
+            suggestedQueries: [
+              `List courses to find the correct course ID`,
+              `Search courses by name`,
+            ],
+          });
+        }
+      }
+      
+      resolvedCourseId = resolvedId;
+    }
+
     let users: Array<EnrolledUser>;
     try {
-      if (parsed.courseid != null) {
-        users = await fetchCourseUsers(client, parsed.courseid, parsed.offset, parsed.limit);
-      } else {
+      if (parsed.courseid != null || resolvedCourseId != null) {
+        const courseId = parsed.courseid ?? resolvedCourseId!;
+        users = await fetchCourseUsers(client, courseId, parsed.offset, parsed.limit);
+      } else if (parsed.categoryid != null) {
         const [courses, categories] = await Promise.all([
           getCourses(client),
           getCategories(client),
@@ -376,12 +507,29 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
             ],
           },
         });
+      } else {
+        // This should not happen due to validation, but just in case
+        return buildToolErrorResponse({
+          error: "Invalid parameters: must provide courseid, coursename, or categoryid",
+          summary: "Invalid parameters provided to list_course_users",
+          meta: {
+            tool: name,
+            title: "Enrolled Users",
+            resultCount: 0,
+          },
+          suggestedQueries: [
+            "List courses to find the correct course ID",
+            "List categories and use the exact category ID",
+          ],
+        });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const isParameterIssue =
         error instanceof MoodleAPIError && /invalid parameter value detected/i.test(message);
 
+      const courseIdForMeta = parsed.courseid ?? resolvedCourseId;
+      
       return buildToolErrorResponse({
         error: {
           code: isParameterIssue
@@ -399,11 +547,11 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           : "I could not list enrolled users because Moodle rejected the enrollment-user request.",
         meta: {
           tool: name,
-          title: parsed.courseid != null
-            ? `Enrolled Users — Course ${parsed.courseid}`
+          title: parsed.courseid != null || resolvedCourseId != null
+            ? `Enrolled Users — Course ${courseIdForMeta}`
             : `Enrolled Users — Category ${parsed.categoryid}`,
-          entity: parsed.courseid != null ? "course" : "course_category",
-          entityId: parsed.courseid ?? parsed.categoryid,
+          entity: parsed.courseid != null || resolvedCourseId != null ? "course" : "course_category",
+          entityId: parsed.categoryid,
           resultCount: 0,
         },
         highlights: [
@@ -426,6 +574,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       });
     }
 
+    const courseIdForTitle = parsed.courseid ?? resolvedCourseId;
     const rows = users.map((u) => ({
         id: u.id,
         username: u.username,
@@ -462,14 +611,14 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
     return buildToolResponse({
       meta: {
         tool: name,
-        title: `Enrolled Users — Course ${parsed.courseid}`,
+        title: `Enrolled Users — Course ${courseIdForTitle}`,
         entity: "course",
-        entityId: parsed.courseid,
+        entityId: courseIdForTitle,
         resultCount: rows.length,
       },
       data: {
         kind: "table",
-        title: `Enrolled Users — Course ${parsed.courseid}`,
+        title: `Enrolled Users — Course ${courseIdForTitle}`,
         columns: [
           { key: "id", label: "User ID" },
           { key: "fullname", label: "Name" },
@@ -489,7 +638,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       },
       context: {
         summary:
-          `Returned ${rows.length} enrolled users for course ${parsed.courseid}. ` +
+          `Returned ${rows.length} enrolled users for course ${courseIdForTitle}. ` +
           `${neverAccessed} have never accessed the course.`,
         metrics: {
           returned: rows.length,

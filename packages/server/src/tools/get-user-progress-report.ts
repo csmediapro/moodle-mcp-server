@@ -5,17 +5,20 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
+import { getCourses, getCategories } from "./cache.js";
+import { searchCoursesByName } from "./search-courses-by-name.js";
 
 export const name = "get_user_progress_report";
 
 export const description =
   "Build a user progress report showing courses, grades, and completion status for a Moodle user. " +
   "Combines course enrollment, grade items, and activity completion status into a single report. " +
-  "Use this to understand a user's progress across all their courses.";
+  "Use this to understand a user's progress across all their courses. " +
+  "Accepts either a course ID or course name for filtering.";
 
 export const inputSchema = z.object({
   userid: z.number().int().positive().describe("Exact Moodle user ID"),
-  courseids: z.array(z.number().int().positive()).optional().describe("Optional list of course IDs to filter by"),
+  courseIdentifier: z.string().optional().describe("Course ID (numeric) or course name (text) to filter by"),
   includeEmptyCourses: z.boolean().optional().default(false).describe("Include courses with no grade items or completion data"),
   limitCourses: z.number().int().min(1).max(100).optional().default(25).describe("Maximum number of courses to include in the report"),
 });
@@ -103,11 +106,45 @@ function calculateCompletionPercent(completed: number, total: number): number | 
   return Math.round((completed / total) * 100);
 }
 
+/**
+ * Resolve course identifier (ID or name) to a course ID
+ * @param client Moodle client
+ * @param courseIdentifier Course ID (numeric string) or course name
+ * @returns Resolved course ID or null if not found
+ */
+async function resolveCourseIdentifier(
+  client: MoodleClient,
+  courseIdentifier: string
+): Promise<number | null> {
+  // Check if it's a numeric ID
+  const courseId = parseInt(courseIdentifier, 10);
+  if (!isNaN(courseId) && courseId > 0) {
+    return courseId;
+  }
+
+  // It's a course name, search for it
+  const courses = await getCourses(client);
+  const categories = await getCategories(client);
+  
+  const matchingCourses = searchCoursesByName(courses, categories, courseIdentifier, 10);
+  
+  if (matchingCourses.length === 0) {
+    return null; // No matches found
+  }
+  
+  if (matchingCourses.length === 1) {
+    return matchingCourses[0].id; // Return the single match
+  }
+  
+  // Multiple matches - this should be handled by the calling function
+  return null;
+}
+
 export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
   return async (args: unknown) => {
     const parsed = inputSchema.parse(args) as {
       userid: number;
-      courseids?: number[];
+      courseIdentifier?: string;
       includeEmptyCourses?: boolean;
       limitCourses?: number;
     };
@@ -185,15 +222,102 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       const user = users[0];
       const fullname = user.fullname ?? `${user.firstname} ${user.lastname}`.trim();
 
+      // Handle course identifier if provided
+      let courseIdFilter: number | undefined = undefined;
+      if (parsed.courseIdentifier) {
+        const resolvedCourseId = await resolveCourseIdentifier(client, parsed.courseIdentifier);
+        
+        if (resolvedCourseId === null) {
+          // Check if it's a name that resulted in multiple matches
+          const courses = await getCourses(client);
+          const categories = await getCategories(client);
+          const matchingCourses = searchCoursesByName(courses, categories, parsed.courseIdentifier, 10);
+          
+          if (matchingCourses.length > 1) {
+            // Return interactive selection for multiple matches
+            return buildToolResponse({
+              meta: {
+                tool: name,
+                title: `Select Course for User Progress Report — ${fullname}`,
+                entity: "user",
+                entityId: parsed.userid,
+                resultCount: matchingCourses.length,
+              },
+              data: {
+                kind: "table",
+                title: `Multiple Courses Found — "${parsed.courseIdentifier}"`,
+                columns: [
+                  { key: "id", label: "Course ID" },
+                  { key: "fullname", label: "Full Name" },
+                  { key: "shortname", label: "Short Name" },
+                  { key: "categoryname", label: "Category" },
+                  { key: "visible", label: "Visible" },
+                ],
+                rows: matchingCourses,
+              },
+              context: {
+                summary: `Found ${matchingCourses.length} courses matching "${parsed.courseIdentifier}". Please select the correct course.`,
+                metrics: {
+                  searchTerm: parsed.courseIdentifier,
+                  returned: matchingCourses.length,
+                  total: matchingCourses.length,
+                },
+                fields: ["id", "fullname", "shortname", "categoryname", "visible"],
+              },
+              interactions: {
+                mode: "row_actions",
+                prompt: "Multiple courses matched. Select the correct course to continue.",
+                submitAs: "user_message",
+                rowKey: "id",
+                rowLabelFields: ["fullname", "shortname"],
+                rowActions: [
+                  {
+                    type: "button",
+                    label: "Select",
+                    template: `get_user_progress_report ${parsed.userid} {{id}}`,
+                    style: "primary",
+                  },
+                ],
+              },
+            });
+          } else {
+            // No matches found
+            return buildToolErrorResponse({
+              error: {
+                code: "course_not_found",
+                message: `No course found matching "${parsed.courseIdentifier}"`,
+                kind: "not_found",
+                canRetry: true,
+                actionRequired: "Try a different course name or use a course ID.",
+              },
+              summary: `No course found matching "${parsed.courseIdentifier}".`,
+              meta: {
+                tool: name,
+                title: `User Progress Report — ${fullname}`,
+                entity: "user",
+                entityId: parsed.userid,
+                resultCount: 0,
+              },
+              suggestedQueries: [
+                `List courses to find the correct course ID`,
+                `Search courses by name`,
+              ],
+            });
+          }
+        }
+        
+        courseIdFilter = resolvedCourseId;
+      }
+
       // Get user's courses
       let userCourses = await client.call<MoodleUserCourse[]>({
         wsfunction: "core_enrol_get_users_courses",
         params: { userid: parsed.userid },
       });
 
-      // Filter by courseids if provided
-      if (parsed.courseids && parsed.courseids.length > 0) {
-        userCourses = userCourses.filter(course => parsed.courseids!.includes(course.id));
+      // Filter by course ID if provided
+      if (courseIdFilter) {
+        userCourses = userCourses.filter(course => course.id === courseIdFilter);
       }
 
       // Limit courses if needed
@@ -202,6 +326,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       }
 
       if (userCourses.length === 0) {
+        const courseInfo = courseIdFilter ? ` in course ${courseIdFilter}` : "";
         return buildToolResponse({
           meta: {
             tool: name,
@@ -223,7 +348,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
             rows: [],
           },
           context: {
-            summary: `${fullname} is not enrolled in any courses.`,
+            summary: `${fullname} is not enrolled in any courses${courseInfo}.`,
             metrics: {
               userid: parsed.userid,
               courseCount: 0,
@@ -395,17 +520,19 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
         highlights.push("No courses with grade items found");
       }
 
+      const courseFilterInfo = courseIdFilter ? ` for course ${courseIdFilter}` : "";
+      
       return buildToolResponse({
         meta: {
           tool: name,
-          title: `User Progress Report — ${fullname}`,
+          title: `User Progress Report — ${fullname}${courseFilterInfo}`,
           entity: "user",
           entityId: parsed.userid,
           resultCount: reportRows.length,
         },
         data: {
           kind: "table",
-          title: `User Progress Report — ${fullname}`,
+          title: `User Progress Report — ${fullname}${courseFilterInfo}`,
           columns: [
             { key: "course", label: "Course" },
             { key: "course_completed_pct", label: "Course Completed %" },
@@ -419,7 +546,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           summary: 
             `${fullname} is enrolled in ${totalCourses} course${totalCourses !== 1 ? 's' : ''}` +
             (averageCompletion !== null ? ` with an average completion of ${averageCompletion}%` : "") +
-            `. The report contains ${reportRows.length} item${reportRows.length !== 1 ? 's' : ''}.`,
+            `${courseFilterInfo}. The report contains ${reportRows.length} item${reportRows.length !== 1 ? 's' : ''}.`,
           metrics: {
             userid: parsed.userid,
             totalCourses,
