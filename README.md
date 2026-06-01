@@ -6,6 +6,8 @@ Moodle Report is the customer-facing brand for an open-source MCP (Model Context
 
 Instead of learning report builders, writing SQL, or exporting CSVs, you ask questions in plain English — the AI agent queries your LMS and returns structured data.
 
+**Project home:** https://csmediapro.com/products/moodle-mcp-server
+
 ---
 
 ## Features
