@@ -31,6 +31,10 @@ export class MoodleClient {
     this.token = token;
   }
 
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
   /**
    * Execute a Moodle Web Services API call.
    * Returns the parsed response body (already unwrapped from Moodle's envelope).

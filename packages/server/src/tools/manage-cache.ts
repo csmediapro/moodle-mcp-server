@@ -7,14 +7,14 @@ import { clearCache, refreshCache } from "./cache.js";
 /**
  * manage_cache — Manage the Moodle course and category caches.
  *
- * Allows operators to refresh or clear the in-memory and persistent caches
+ * Allows operators to refresh or clear the in-memory and file-backed caches
  * to ensure data freshness or free up memory.
  */
 export const name = "manage_cache";
 
 export const description =
   "Manage the Moodle course and category caches. " +
-  "Allows refreshing or clearing the in-memory and persistent caches " +
+  "Allows refreshing or clearing the in-memory and file-backed caches " +
   "to ensure data freshness or free up memory. " +
   "Use 'refresh' to update cache with latest data from Moodle, " +
   "'clear' to remove cached data, and 'all' to affect both courses and categories.";
@@ -43,12 +43,16 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
 
     try {
       if (action === "refresh") {
-        await refreshCache(client, target);
+        const results = await refreshCache(client, target);
+        const highlights = results.map((result) =>
+          `${result.target}: fetched ${result.count} item${result.count === 1 ? "" : "s"} from Moodle`
+        );
+
         return buildToolResponse({
           meta: {
             tool: name,
             title: "Cache Management",
-            resultCount: 1,
+            resultCount: results.length,
             entity: "cache_management",
           },
           data: {
@@ -56,8 +60,8 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
             title: "Cache Refreshed",
           },
           context: {
-            summary: `Successfully refreshed ${target} cache${target === "all" ? "s" : ""} from Moodle.`,
-            highlights: [`Refreshed ${target} cache${target === "all" ? "s" : ""}`],
+            summary: `Refreshed ${target} cache${target === "all" ? "s" : ""} from Moodle and updated the file-backed cache.`,
+            highlights,
             suggestedQueries: [
               "List courses",
               "List categories",
@@ -67,12 +71,20 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
           },
         });
       } else if (action === "clear") {
-        await clearCache(target);
+        const results = await clearCache(target);
+        const highlights = results.map((result) => {
+          const cleared = [
+            result.memoryCleared ? "memory" : null,
+            result.persistentCleared ? "file" : null,
+          ].filter(Boolean).join(" + ");
+          return `${result.target}: cleared ${cleared || "nothing cached"}`;
+        });
+
         return buildToolResponse({
           meta: {
             tool: name,
             title: "Cache Management",
-            resultCount: 1,
+            resultCount: results.length,
             entity: "cache_management",
           },
           data: {
@@ -80,8 +92,8 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
             title: "Cache Cleared",
           },
           context: {
-            summary: `Successfully cleared ${target} cache${target === "all" ? "s" : ""}.`,
-            highlights: [`Cleared ${target} cache${target === "all" ? "s" : ""}`],
+            summary: `Cleared ${target} cache${target === "all" ? "s" : ""} from memory and disk where present.`,
+            highlights,
             suggestedQueries: [
               "Refresh all cache",
               "Refresh courses cache",

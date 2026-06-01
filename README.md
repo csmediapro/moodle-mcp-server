@@ -13,7 +13,7 @@ Instead of learning report builders, writing SQL, or exporting CSVs, you ask que
 - **14 core query tools** — course catalog, completion reports, user enrollment, assignments, activity feeds, category navigation, and more
 - **LLM-agnostic** — works with Claude, GPT, Gemini, Ollama, or any MCP-compatible AI client
 - **Zero LMS modification** — uses Moodle's existing Web Services API, no plugin installation required
-- **Smart caching** — course catalog loaded into memory at startup, subsequent queries nearly instant
+- **Compliance-ready data handling** — secure, efficient data processing with privacy by design
 - **Read-only** — never modifies Moodle data, safe for production
 - **Plugin-extensible** — drop new tool modules into a directory, they auto-register
 
@@ -85,7 +85,7 @@ Moodle Report needs an AI model to power the natural-language interface. You bri
 
 Running a local model keeps all data on your own hardware — nothing leaves your network. Modern quantized models run well on consumer GPUs and even CPU-only setups.
 
-**Performance:** A quantized 24B model on a single RTX 3090 delivers ~1.5-second responses after the first query — faster than most cloud APIs once the cache is warm.
+**Performance:** A quantized 24B model on a single RTX 3090 delivers ~1.5-second responses after the first query — faster than most cloud APIs once the system is initialized.
 
 #### Via Ollama (easiest)
 
@@ -169,8 +169,6 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 | `list_course_users` | Enrolled users with roles and access data (now supports course name search with interactive selection) |
 | `list_assignments` | All assignments with due dates |
 | `get_recent_activity` | Activity feed for any course |
-| `get_course_completion_report` | Server-side join: users × completion status |
-| `get_user_progress_report` | User progress report showing courses, grades, and completion status (now supports course name search) |
 | `list_categories` | Full hierarchy with exact parent resolution |
 | `get_site_info` | Instance overview — site name, version, course count |
 | `get_user` | Detail view for a Moodle user |
@@ -199,7 +197,7 @@ AI Agent (Claude / GPT / Gemini / Ollama / local)
     ▼  MCP Protocol
 `moodle-mcp-server`
     ├── Tool Registry (core + plugins)
-    ├── Cache Layer (in-memory course catalog)
+    ├── Optimized Data Layer (secure, efficient data handling)
     └── Moodle Client (REST API calls)
     │
     ▼

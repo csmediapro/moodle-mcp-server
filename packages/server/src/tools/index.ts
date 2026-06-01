@@ -16,6 +16,7 @@ import * as searchUsers from "./search-users.js";
 import * as searchCoursesByName from "./search-courses-by-name.js";
 import * as getUserProgressReport from "./get-user-progress-report.js";
 import * as manageCache from "./manage-cache.js";
+import * as cacheStatus from "./cache-status.js";
 import * as userSchema from "./user-schema.js";
 
 /**
@@ -45,6 +46,7 @@ const TOOL_MODULES: ToolModule[] = [
   searchUsers,
   searchCoursesByName,
   getUserProgressReport,
+  cacheStatus,
   manageCache,
 ];
 
