@@ -13,6 +13,7 @@ import * as listCategories from "./list-categories.js";
 import * as getUser from "./get-user.js";
 import * as listUserCourses from "./list-user-courses.js";
 import * as searchUsers from "./search-users.js";
+import * as searchCoursesByName from "./search-courses-by-name.js";
 import * as getUserProgressReport from "./get-user-progress-report.js";
 import * as userSchema from "./user-schema.js";
 
@@ -41,6 +42,7 @@ const TOOL_MODULES: ToolModule[] = [
   getUser,
   listUserCourses,
   searchUsers,
+  searchCoursesByName,
   getUserProgressReport,
 ];
 
