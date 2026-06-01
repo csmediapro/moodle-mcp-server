@@ -182,7 +182,7 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 - **User Analytics** — progress tracking, engagement scoring, risk flags
 - **Compliance Pack** — certification tracking, expiration alerts, audit exports
 
-Learn more at [csmediapro.com/moodlereport](https://csmediapro.com/moodlereport).
+
 
 ---
 
@@ -237,5 +237,4 @@ You cannot:
 
 Moodle Report is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation.
 
-- **Product page:** [csmediapro.com/moodlereport](https://csmediapro.com/moodlereport)
 - **Contact:** contact@csmediapro.com
