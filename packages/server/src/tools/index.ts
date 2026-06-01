@@ -13,6 +13,7 @@ import * as listCategories from "./list-categories.js";
 import * as getUser from "./get-user.js";
 import * as listUserCourses from "./list-user-courses.js";
 import * as searchUsers from "./search-users.js";
+import * as getUserProgressReport from "./get-user-progress-report.js";
 import * as userSchema from "./user-schema.js";
 
 /**
@@ -40,6 +41,7 @@ const TOOL_MODULES: ToolModule[] = [
   getUser,
   listUserCourses,
   searchUsers,
+  getUserProgressReport,
 ];
 
 // Schema tools follow a slightly different module shape:
