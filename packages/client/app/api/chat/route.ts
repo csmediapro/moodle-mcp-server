@@ -52,7 +52,7 @@ import { logChatEval, logToolEval } from "@/lib/eval-logging";
 import { logCompositePattern } from "@/lib/composite-logging";
 import { initMCPClient, listTools, callTool } from "@/lib/mcp-client";
 import { formatToolResultForLLM } from "@/lib/tool-result";
-import type { Message, Tool, LLMEvent } from "@/lib/llm/types";
+import type { Message, Tool, LLMProvider } from "@/lib/llm/types";
 
 // Initialize MCP client once at module load
 // (Next.js modules persist across requests in dev, once in prod)
@@ -75,7 +75,97 @@ function isStructuredToolResult(value: unknown): value is {
   return typeof value === "object" && value !== null;
 }
 
-function shouldStopAfterToolResult(opts: {
+type ProviderTurnResult = {
+  assistantText: string;
+  toolCalls: Array<{
+    id: string;
+    name: string;
+    args: unknown;
+  }>;
+  stopReason: string;
+  usage?: { promptTokens: number; completionTokens: number };
+  hadError: boolean;
+  errorMessage: string | null;
+  textStarted: boolean;
+  toolCallStarted: boolean;
+};
+
+async function runProviderTurn(opts: {
+  provider: LLMProvider;
+  messages: Message[];
+  tools: Tool[];
+  signal: AbortSignal;
+  send: (event: Record<string, unknown>) => void;
+  onTextDelta?: () => void;
+  onToolCall?: () => void;
+}): Promise<ProviderTurnResult> {
+  const toolCalls: ProviderTurnResult["toolCalls"] = [];
+  let assistantText = "";
+  let stopReason = "";
+  let usage: ProviderTurnResult["usage"];
+  let hadError = false;
+  let errorMessage: string | null = null;
+  let textStarted = false;
+  let toolCallStarted = false;
+
+  const events = opts.provider.generate({
+    messages: opts.messages,
+    tools: opts.tools,
+    signal: opts.signal,
+  });
+
+  for await (const event of events) {
+    switch (event.type) {
+      case "text_delta":
+        textStarted = true;
+        assistantText += event.text;
+        opts.onTextDelta?.();
+        opts.send({ type: "text_delta", text: event.text });
+        break;
+
+      case "tool_call":
+        toolCallStarted = true;
+        opts.onToolCall?.();
+        toolCalls.push({
+          id: event.id,
+          name: event.name,
+          args: event.args,
+        });
+        opts.send({
+          type: "tool_call",
+          id: event.id,
+          name: event.name,
+          args: event.args,
+        });
+        break;
+
+      case "error":
+        opts.send({ type: "error", message: event.message });
+        stopReason = "error";
+        hadError = true;
+        errorMessage = event.message;
+        break;
+
+      case "done":
+        stopReason = event.stopReason;
+        usage = event.usage;
+        break;
+    }
+  }
+
+  return {
+    assistantText,
+    toolCalls,
+    stopReason,
+    usage,
+    hadError,
+    errorMessage,
+    textStarted,
+    toolCallStarted,
+  };
+}
+
+function shouldFinalizeAfterToolResult(opts: {
   userMessage: string;
   toolCallsFromThisTurn: Array<{ id: string; name: string; args: unknown }>;
   toolResults: unknown[];
@@ -113,6 +203,19 @@ function shouldStopAfterToolResult(opts: {
   ];
 
   return directDisplayPatterns.some((pattern) => pattern.test(prompt));
+}
+
+function buildFinalSummaryMessages(currentMessages: Message[]): Message[] {
+  return [
+    ...currentMessages,
+    {
+      role: "system",
+      content:
+        "Write a concise final response based on the latest tool result. " +
+        "Do not request or imply any additional tool calls. " +
+        "The UI already renders the full data, so summarize the result in 1-3 sentences without recreating the table or record.",
+    },
+  ];
 }
 
 async function ensureMCPReady() {
@@ -240,79 +343,48 @@ export async function POST(request: NextRequest) {
         while (maxIterations > 0) {
           maxIterations--;
 
-          const toolCallsFromThisTurn: Array<{
-            id: string;
-            name: string;
-            args: unknown;
-          }> = [];
-          let assistantText = "";
-          let stopReason = "";
-
           // Phase 1: Call the LLM provider
-          const events = provider.generate({
+          const turn = await runProviderTurn({
+            provider,
             messages: currentMessages,
             tools,
             signal: abortController.signal,
+            send,
+            onTextDelta: () => {
+              if (timeToFirstTokenMs === null) {
+                timeToFirstTokenMs = Date.now() - requestStart;
+              }
+            },
+            onToolCall: () => {
+              if (timeToFirstToolCallMs === null) {
+                timeToFirstToolCallMs = Date.now() - requestStart;
+              }
+            },
           });
 
-          for await (const event of events) {
-            switch (event.type) {
-              case "text_delta":
-                if (timeToFirstTokenMs === null) {
-                  timeToFirstTokenMs = Date.now() - requestStart;
-                }
-                assistantText += event.text;
-                fullAssistantText += event.text;
-                send({ type: "text_delta", text: event.text });
-                break;
-
-              case "tool_call":
-                if (timeToFirstToolCallMs === null) {
-                  timeToFirstToolCallMs = Date.now() - requestStart;
-                }
-                toolCallsAttempted += 1;
-                toolCallsFromThisTurn.push({
-                  id: event.id,
-                  name: event.name,
-                  args: event.args,
-                });
-                send({
-                  type: "tool_call",
-                  id: event.id,
-                  name: event.name,
-                  args: event.args,
-                });
-                break;
-
-              case "error":
-                send({ type: "error", message: event.message });
-                stopReason = "error";
-                hadError = true;
-                errorMessage = event.message;
-                break;
-
-              case "done":
-                stopReason = event.stopReason;
-                finalStopReason = event.stopReason;
-                completed = true;
-                if (event.usage) {
-                  lastPromptTokens = event.usage.promptTokens;
-                  lastCompletionTokens = event.usage.completionTokens;
-                }
-                break;
-            }
+          toolCallsAttempted += turn.toolCalls.length;
+          fullAssistantText += turn.assistantText;
+          finalStopReason = turn.stopReason;
+          completed = true;
+          if (turn.usage) {
+            lastPromptTokens = turn.usage.promptTokens;
+            lastCompletionTokens = turn.usage.completionTokens;
+          }
+          if (turn.hadError) {
+            hadError = true;
+            errorMessage = turn.errorMessage;
           }
 
           // If the provider finished without tool calls, we're done
-          if (toolCallsFromThisTurn.length === 0 || stopReason === "error") {
+          if (turn.toolCalls.length === 0 || turn.stopReason === "error") {
             break;
           }
 
           // Add the assistant message with tool calls to history
           currentMessages.push({
             role: "assistant",
-            content: assistantText || null as unknown as string,
-            toolCalls: toolCallsFromThisTurn.map((tc) => ({
+            content: turn.assistantText || null as unknown as string,
+            toolCalls: turn.toolCalls.map((tc) => ({
               id: tc.id,
               name: tc.name,
               args: tc.args,
@@ -323,7 +395,7 @@ export async function POST(request: NextRequest) {
           let toolFailureThisTurn = false;
           const toolResultsThisTurn: unknown[] = [];
 
-          for (const tc of toolCallsFromThisTurn) {
+          for (const tc of turn.toolCalls) {
             const toolStart = Date.now();
             try {
               const result = await callTool(tc.name, tc.args);
@@ -418,9 +490,9 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          if (toolCallsFromThisTurn.length >= 2) {
+          if (turn.toolCalls.length >= 2) {
             logCompositePattern({
-              toolCalls: toolCallsFromThisTurn.map((tc) => ({
+              toolCalls: turn.toolCalls.map((tc) => ({
                 name: tc.name,
                 args: tc.args,
               })),
@@ -432,21 +504,44 @@ export async function POST(request: NextRequest) {
             break;
           }
 
-          if (shouldStopAfterToolResult({
+          if (shouldFinalizeAfterToolResult({
             userMessage: body.message,
-            toolCallsFromThisTurn,
+            toolCallsFromThisTurn: turn.toolCalls,
             toolResults: toolResultsThisTurn,
           })) {
-            finalStopReason = "tool_result_only";
+            const finalTurn = await runProviderTurn({
+              provider,
+              messages: buildFinalSummaryMessages(currentMessages),
+              tools: [],
+              signal: abortController.signal,
+              send,
+              onTextDelta: () => {
+                if (timeToFirstTokenMs === null) {
+                  timeToFirstTokenMs = Date.now() - requestStart;
+                }
+              },
+            });
+
+            fullAssistantText += finalTurn.assistantText;
+            finalStopReason = "final_summary";
+            completed = true;
+            if (finalTurn.usage) {
+              lastPromptTokens = finalTurn.usage.promptTokens;
+              lastCompletionTokens = finalTurn.usage.completionTokens;
+            }
+            if (finalTurn.hadError) {
+              hadError = true;
+              errorMessage = finalTurn.errorMessage;
+            }
             break;
           }
 
           // Continue the loop if the provider signaled tool calls.
           // OpenAI uses "tool_calls", Anthropic uses "tool_use".
           if (
-            stopReason !== "tool_calls" &&
-            stopReason !== "tool_use" &&
-            stopReason !== "function_call"
+            turn.stopReason !== "tool_calls" &&
+            turn.stopReason !== "tool_use" &&
+            turn.stopReason !== "function_call"
           ) {
             break;
           }
