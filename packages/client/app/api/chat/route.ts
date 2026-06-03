@@ -96,20 +96,20 @@ function shouldStopAfterToolResult(opts: {
 
   const prompt = opts.userMessage.trim().toLocaleLowerCase();
   const directDisplayPatterns = [
-    /^(list|show|display|get)/,
-    /firsts+d+/,
-    /all/,
-    /sub categories?/,
-    /children/,
-    /under/,
-    /inside/,
-    /courses?/,
-    /categories?/,
-    /users?/,
-    /assignments?/,
-    /activity/,
-    /completion/,
-    /details?/,
+    /^(list|show|display|get)\b/,
+    /\bfirst\s+\d+\b/,
+    /\ball\b/,
+    /\bsub categories?\b/,
+    /\bchildren\b/,
+    /\bunder\b/,
+    /\binside\b/,
+    /\bcourses?\b/,
+    /\bcategories?\b/,
+    /\busers?\b/,
+    /\bassignments?\b/,
+    /\bactivity\b/,
+    /\bcompletion\b/,
+    /\bdetails?\b/,
   ];
 
   return directDisplayPatterns.some((pattern) => pattern.test(prompt));
