@@ -48,6 +48,16 @@ npm run server:build
 node packages/server/dist/index.js
 ```
 
+### User field schema
+
+User field display settings are generated per Moodle instance and stored locally at
+`packages/server/data/user-field-schema.json`. This file is intentionally ignored by git
+because it can include site-specific custom profile fields.
+
+After connecting to a Moodle site, run the `refresh_user_field_schema` tool once to
+discover available standard and custom user fields. A minimal example shape is included
+at `packages/server/data/user-field-schema.example.json`.
+
 ### Config identity
 
 The core owns two different server identity fields:

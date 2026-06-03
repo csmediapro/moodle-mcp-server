@@ -3,6 +3,7 @@ dist/
 .next/
 logs/
 packages/server/data/cache/
+packages/server/data/user-field-schema.json
 .env
 .env.local
 *.tsbuildinfo

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "siteUrl": "https://moodle.example.edu",
+  "moodleVersion": "4.5.0",
+  "userFields": {
+    "id": {
+      "name": "User ID",
+      "type": "number",
+      "source": "standard",
+      "display": true,
+      "filterable": true,
+      "displayOrder": 10
+    },
+    "fullname": {
+      "name": "Full Name",
+      "type": "string",
+      "source": "standard",
+      "display": true,
+      "filterable": false,
+      "displayOrder": 20
+    },
+    "email": {
+      "name": "Email",
+      "type": "string",
+      "source": "standard",
+      "display": true,
+      "filterable": true,
+      "displayOrder": 30
+    },
+    "school": {
+      "name": "School",
+      "type": "string",
+      "source": "custom",
+      "display": true,
+      "filterable": false,
+      "displayOrder": 40
+    }
+  }
+}
