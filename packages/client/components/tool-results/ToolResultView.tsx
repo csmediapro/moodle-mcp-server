@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 type ToolDataKind = "table" | "record" | "list" | "none";
+type ToolPresentation = "table" | "compact_card" | "full_card";
 
 interface ToolColumn {
   key: string;
@@ -35,7 +36,10 @@ interface ToolPagination {
 interface ToolInteractionAction {
   type: "button";
   label: string;
-  template: string;
+  template?: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  argsFromRow?: Record<string, string>;
   style?: "primary" | "secondary";
 }
 
@@ -56,6 +60,24 @@ interface ToolActionInteractions {
 }
 
 type ToolInteractions = ToolRowInteractions | ToolActionInteractions;
+
+interface ToolEntityAction {
+  label: string;
+  tool: string;
+  args: Record<string, unknown>;
+  style?: "primary" | "secondary";
+}
+
+interface ToolEntityRef {
+  type: string;
+  id: string | number;
+}
+
+interface ToolEntity extends ToolEntityRef {
+  label?: string;
+  fields?: Record<string, unknown>;
+  actions?: ToolEntityAction[];
+}
 
 export interface StructuredToolResult {
   ok?: boolean;
@@ -78,6 +100,7 @@ export interface StructuredToolResult {
   };
   data: {
     kind: ToolDataKind;
+    presentation?: ToolPresentation;
     title?: string;
     columns?: ToolColumn[];
     rows?: Array<Record<string, unknown>>;
@@ -88,6 +111,8 @@ export interface StructuredToolResult {
   context: {
     summary: string;
     metrics?: Record<string, string | number | boolean | null>;
+    entities?: ToolEntity[];
+    primaryEntity?: ToolEntityRef;
     highlights?: string[];
     suggestedQueries?: string[];
     fields?: string[];
@@ -170,6 +195,39 @@ function resolveActionTemplate(
     const raw = row[String(key).trim()];
     return raw == null ? "" : String(raw);
   });
+}
+
+function resolveActionArgs(
+  action: ToolInteractionAction,
+  row?: Record<string, unknown>
+): Record<string, unknown> | undefined {
+  if (!action.argsFromRow || !row) {
+    return action.args;
+  }
+
+  const args: Record<string, unknown> = { ...(action.args ?? {}) };
+  for (const [argKey, rowKey] of Object.entries(action.argsFromRow)) {
+    args[argKey] = row[rowKey];
+  }
+  return args;
+}
+
+function resolveActionMessage(
+  action: ToolInteractionAction,
+  row?: Record<string, unknown>
+): string {
+  if (action.template) {
+    return row ? resolveActionTemplate(action.template, row) : action.template;
+  }
+
+  if (action.tool) {
+    const args = resolveActionArgs(action, row);
+    return args && Object.keys(args).length > 0
+      ? `Run ${action.tool} with ${JSON.stringify(args)}`
+      : `Run ${action.tool}`;
+  }
+
+  return action.label;
 }
 
 function renderCellValue(value: unknown, key?: string) {
@@ -311,7 +369,7 @@ function ResultTable({
                       <td className="px-3 py-2 align-middle">
                         <div className="flex flex-wrap gap-1.5">
                           {interactions.rowActions.map((action, index) => {
-                            const resolved = resolveActionTemplate(action.template, row.original);
+                            const resolved = resolveActionMessage(action, row.original);
                             return (
                               <button
                                 key={`${action.label}-${index}`}
@@ -369,14 +427,31 @@ function ResultTable({
   );
 }
 
-function ResultRecord({ record }: { record: Record<string, unknown> }) {
-  const entries = Object.entries(record);
+function ResultRecord({
+  record,
+  columns,
+  presentation,
+}: {
+  record: Record<string, unknown>;
+  columns?: ToolColumn[];
+  presentation?: ToolPresentation;
+}) {
+  const isCompact = presentation === "compact_card";
+  const entries = isCompact && columns && columns.length > 0
+    ? columns.map((column) => [column.key, record[column.key], column.label] as const)
+    : Object.entries(record).map(([key, value]) => [key, value, formatLabel(key)] as const);
 
   return (
-    <dl className="grid grid-cols-1 gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white p-4 text-xs sm:grid-cols-2">
-      {entries.map(([key, value]) => (
+    <dl
+      className={
+        isCompact
+          ? "grid grid-cols-1 gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white p-4 text-xs sm:grid-cols-2 lg:grid-cols-3"
+          : "grid grid-cols-1 gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white p-4 text-xs sm:grid-cols-2"
+      }
+    >
+      {entries.map(([key, value, label]) => (
         <div key={key}>
-          <dt className="mb-0.5 font-medium uppercase tracking-wide text-slate-400">{formatLabel(key)}</dt>
+          <dt className="mb-0.5 font-medium uppercase tracking-wide text-slate-400">{label}</dt>
           <dd className="text-slate-700">{formatValue(value, key)}</dd>
         </div>
       ))}
@@ -415,7 +490,13 @@ function ResultData({
         />
       ) : null;
     case "record":
-      return data.record ? <ResultRecord record={data.record} /> : null;
+      return data.record ? (
+        <ResultRecord
+          record={data.record}
+          columns={data.columns}
+          presentation={data.presentation}
+        />
+      ) : null;
     case "list":
       return data.items ? <ResultList items={data.items} /> : null;
     case "none":
@@ -445,7 +526,7 @@ function ToolActions({
         <button
           key={`${action.label}-${index}`}
           type="button"
-          onClick={() => onAction?.(action.template)}
+          onClick={() => onAction?.(resolveActionMessage(action))}
           className={
             action.style === "secondary"
               ? "inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900"

@@ -120,6 +120,91 @@ Rules:
 
 If a plugin tool name collides with an existing tool, the core logs the shadowing event and skips that tool.
 
+## Tool Result Shape
+
+Plugin tools may return any MCP-compatible payload, but Moodle Report understands the structured `ToolResponse` contract exported from `packages/server/src/plugins/contracts.ts`. Use this shape when a result should render as a table, card, list, error, or deterministic follow-up action.
+
+```ts
+export interface ToolResponse {
+  ok: boolean;
+  meta?: {
+    tool: string;
+    title: string;
+    generatedAt: string;
+    resultCount?: number;
+    entity?: string;
+    entityId?: string | number;
+  };
+  data: {
+    kind: "table" | "record" | "list" | "none";
+    presentation?: "table" | "compact_card" | "full_card";
+    title?: string;
+    columns?: Array<{ key: string; label: string }>;
+    rows?: Array<Record<string, unknown>>;
+    record?: Record<string, unknown>;
+    items?: unknown[];
+  };
+  context: {
+    summary: string;
+    metrics?: Record<string, string | number | boolean | null>;
+    entities?: ToolEntity[];
+    primaryEntity?: { type: string; id: string | number };
+    highlights?: string[];
+    suggestedQueries?: string[];
+    fields?: string[];
+    warnings?: string[];
+  };
+  interactions?: ToolInteractionsBlock;
+}
+```
+
+### Presentation
+
+`data.presentation` is a rendering hint. Current supported values:
+
+- `table`: render tabular rows
+- `compact_card`: render a record with only the supplied `columns`
+- `full_card`: render the full record
+
+For `compact_card`, `columns` acts as the display schema. Keep canonical IDs in `record` or `rows` even if the ID is not displayed.
+
+### Entities And Structured Actions
+
+Use `context.entities` to expose canonical identities that can safely be reused by the model and UI. This is the preferred handoff mechanism for compound workflows.
+
+```ts
+{
+  type: "user",
+  id: 14733,
+  label: "Bailey Wallace",
+  fields: {
+    email: "bailey@example.com"
+  },
+  actions: [
+    {
+      label: "Progress report",
+      tool: "get_user_progress_report",
+      args: { userid: 14733 }
+    }
+  ]
+}
+```
+
+When exactly one entity is the obvious subject of the result, also set `context.primaryEntity`.
+
+Row and tool interactions may use either the legacy `template` form or structured action fields:
+
+```ts
+{
+  type: "button",
+  label: "Progress",
+  tool: "get_user_progress_report",
+  argsFromRow: { userid: "id" }
+}
+```
+
+For row actions, `argsFromRow` maps tool argument names to row field keys. Rows must include those source keys even when the corresponding columns are hidden.
+
 ## Loader Behavior
 
 At startup, the core:

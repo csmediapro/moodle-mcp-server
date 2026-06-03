@@ -10,8 +10,11 @@ export interface ToolPagination {
   hasMore?: boolean;
 }
 
+export type ToolPresentation = "table" | "compact_card" | "full_card";
+
 export interface ToolDataBlock {
   kind: "table" | "record" | "list" | "none";
+  presentation?: ToolPresentation;
   title?: string;
   columns?: ToolColumn[];
   rows?: Array<Record<string, unknown>>;
@@ -20,9 +23,29 @@ export interface ToolDataBlock {
   pagination?: ToolPagination;
 }
 
+export interface ToolEntityAction {
+  label: string;
+  tool: string;
+  args: Record<string, unknown>;
+  style?: "primary" | "secondary";
+}
+
+export interface ToolEntityRef {
+  type: string;
+  id: string | number;
+}
+
+export interface ToolEntity extends ToolEntityRef {
+  label?: string;
+  fields?: Record<string, unknown>;
+  actions?: ToolEntityAction[];
+}
+
 export interface ToolContextBlock {
   summary: string;
   metrics?: Record<string, string | number | boolean | null>;
+  entities?: ToolEntity[];
+  primaryEntity?: ToolEntityRef;
   highlights?: string[];
   suggestedQueries?: string[];
   fields?: string[];
@@ -39,7 +62,10 @@ export interface ToolResolutionBlock {
 export interface ToolInteractionAction {
   type: "button";
   label: string;
-  template: string;
+  template?: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+  argsFromRow?: Record<string, string>;
   style?: "primary" | "secondary";
 }
 

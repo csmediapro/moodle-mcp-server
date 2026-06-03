@@ -2,6 +2,18 @@ import { z } from "zod";
 import type { MoodleClient } from "../moodle/client.js";
 import type { MoodleCapabilities } from "../moodle/capabilities.js";
 import type { LogFn } from "../server/factory.js";
+export type {
+  ToolColumn,
+  ToolContextBlock,
+  ToolDataBlock,
+  ToolEntity,
+  ToolEntityAction,
+  ToolEntityRef,
+  ToolInteractionAction,
+  ToolInteractionsBlock,
+  ToolPresentation,
+  ToolResponse,
+} from "../tools/response-types.js";
 
 export const LicenseResultSchema = z.discriminatedUnion("status", [
   z.object({

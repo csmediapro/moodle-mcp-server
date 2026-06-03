@@ -1,6 +1,8 @@
 interface ToolResultContext {
   summary?: unknown;
   metrics?: unknown;
+  entities?: unknown;
+  primaryEntity?: unknown;
   highlights?: unknown;
   suggestedQueries?: unknown;
   fields?: unknown;
@@ -22,6 +24,12 @@ interface ToolResultError {
   actionRequired?: unknown;
 }
 
+interface ToolResultInteractions {
+  mode?: unknown;
+  actions?: unknown;
+  rowActions?: unknown;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -34,12 +42,60 @@ function toBulletList(value: unknown): string[] {
     : [];
 }
 
+function formatJsonInline(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatEntityLine(entity: Record<string, unknown>): string | null {
+  const type = typeof entity.type === "string" && entity.type.trim()
+    ? entity.type.trim()
+    : null;
+  const id = entity.id;
+  if (!type || (typeof id !== "string" && typeof id !== "number")) {
+    return null;
+  }
+
+  const parts = [`${type} id=${String(id)}`];
+  if (typeof entity.label === "string" && entity.label.trim()) {
+    parts.push(`label=${JSON.stringify(entity.label.trim())}`);
+  }
+  if (isRecord(entity.fields) && Object.keys(entity.fields).length > 0) {
+    const fields = Object.entries(entity.fields)
+      .map(([key, value]) => `${key}=${String(value)}`)
+      .join(", ");
+    parts.push(`fields: ${fields}`);
+  }
+  return parts.join(" ");
+}
+
+function formatActionLine(action: Record<string, unknown>): string | null {
+  const tool = typeof action.tool === "string" && action.tool.trim()
+    ? action.tool.trim()
+    : null;
+  if (!tool) {
+    return null;
+  }
+
+  const label = typeof action.label === "string" && action.label.trim()
+    ? ` ${JSON.stringify(action.label.trim())}`
+    : "";
+  const args = isRecord(action.args) ? ` ${formatJsonInline(action.args)}` : "";
+  return `- ${tool}${args}${label}`;
+}
+
 export function formatToolResultForLLM(result: unknown): string {
   if (!isRecord(result) || !isRecord(result.context)) {
     return typeof result === "string" ? result : JSON.stringify(result, null, 2);
   }
 
   const context = result.context as ToolResultContext;
+  const interactions = isRecord(result.interactions)
+    ? (result.interactions as ToolResultInteractions)
+    : null;
   const resolution = isRecord(result.resolution)
     ? (result.resolution as ToolResultResolution)
     : null;
@@ -69,6 +125,71 @@ export function formatToolResultForLLM(result: unknown): string {
       .map(([key, value]) => `${key}=${String(value)}`)
       .join(", ");
     lines.push(`Metrics: ${metricsLine}`);
+  }
+
+  if (isRecord(context.primaryEntity)) {
+    const primary = formatEntityLine(context.primaryEntity);
+    if (primary) {
+      lines.push(`Primary entity: ${primary}`);
+    }
+  }
+
+  if (Array.isArray(context.entities) && context.entities.length > 0) {
+    const entityLines: string[] = [];
+    const actionLines: string[] = [];
+
+    for (const item of context.entities) {
+      if (!isRecord(item)) continue;
+
+      const entityLine = formatEntityLine(item);
+      if (entityLine) {
+        entityLines.push(`- ${entityLine}`);
+      }
+
+      if (Array.isArray(item.actions)) {
+        for (const action of item.actions) {
+          if (!isRecord(action)) continue;
+          const actionLine = formatActionLine(action);
+          if (actionLine) {
+            actionLines.push(actionLine);
+          }
+        }
+      }
+    }
+
+    if (entityLines.length > 0) {
+      lines.push("Entities:");
+      lines.push(...entityLines);
+    }
+
+    if (actionLines.length > 0) {
+      lines.push("Available structured actions:");
+      lines.push(...actionLines);
+    }
+  }
+
+  if (interactions) {
+    const structuredActionLines: string[] = [];
+    const actions = interactions.mode === "tool_actions"
+      ? interactions.actions
+      : interactions.mode === "row_actions"
+        ? interactions.rowActions
+        : null;
+
+    if (Array.isArray(actions)) {
+      for (const action of actions) {
+        if (!isRecord(action)) continue;
+        const actionLine = formatActionLine(action);
+        if (actionLine) {
+          structuredActionLines.push(actionLine);
+        }
+      }
+    }
+
+    if (structuredActionLines.length > 0) {
+      lines.push("Available result actions:");
+      lines.push(...structuredActionLines);
+    }
   }
 
   const highlights = toBulletList(context.highlights);
