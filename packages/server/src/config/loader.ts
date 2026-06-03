@@ -198,13 +198,13 @@ function assertConfigPathWritable(configPath: string): void {
   }
 }
 
-function persistConfig(configPath: string, cfg: MutableConfigObject): void {
+export function persistConfig(configPath: string, cfg: MutableConfigObject): void {
   try {
     writeFileSync(configPath, `${JSON.stringify(cfg, null, 2)}\n`, "utf-8");
   } catch (e) {
     throw new ConfigLoadError(
       "config_unwritable",
-      `Failed to persist generated server.id to ${configPath}: ${
+      `Failed to persist config to ${configPath}: ${
         e instanceof Error ? e.message : String(e)
       }`
     );

@@ -69,10 +69,145 @@ function isToolErrorResult(value: unknown): boolean {
 
 function isStructuredToolResult(value: unknown): value is {
   ok?: boolean;
+  context?: unknown;
+  interactions?: unknown;
   data?: { kind?: unknown };
   error?: unknown;
 } {
   return typeof value === "object" && value !== null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+type StructuredAction = {
+  label?: string;
+  tool: string;
+  args?: Record<string, unknown>;
+};
+
+function normalizeIntentText(value: string): string {
+  return value
+    .toLocaleLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collectStructuredActions(result: unknown): StructuredAction[] {
+  if (!isRecord(result)) {
+    return [];
+  }
+
+  const actions: StructuredAction[] = [];
+  const addAction = (value: unknown) => {
+    if (!isRecord(value) || typeof value.tool !== "string" || !value.tool.trim()) {
+      return;
+    }
+
+    actions.push({
+      tool: value.tool.trim(),
+      ...(typeof value.label === "string" && value.label.trim()
+        ? { label: value.label.trim() }
+        : {}),
+      ...(isRecord(value.args) ? { args: value.args } : {}),
+    });
+  };
+
+  if (isRecord(result.context) && Array.isArray(result.context.entities)) {
+    for (const entity of result.context.entities) {
+      if (!isRecord(entity) || !Array.isArray(entity.actions)) {
+        continue;
+      }
+      for (const action of entity.actions) {
+        addAction(action);
+      }
+    }
+  }
+
+  if (isRecord(result.interactions)) {
+    const rawActions =
+      result.interactions.mode === "tool_actions"
+        ? result.interactions.actions
+        : result.interactions.mode === "row_actions"
+          ? result.interactions.rowActions
+          : null;
+
+    if (Array.isArray(rawActions)) {
+      for (const action of rawActions) {
+        addAction(action);
+      }
+    }
+  }
+
+  return actions;
+}
+
+function actionMatchesUserIntent(userMessage: string, action: StructuredAction): boolean {
+  const prompt = normalizeIntentText(userMessage);
+  const label = action.label ? normalizeIntentText(action.label) : "";
+  const tool = normalizeIntentText(action.tool);
+
+  if (action.tool === "get_user_progress_report") {
+    return (
+      /\bprogress reports?\b/.test(prompt) ||
+      /\bcompletion reports?\b/.test(prompt) ||
+      /\b(progress|completion|grade|grades)\b/.test(prompt) ||
+      /\breports?\b/.test(prompt)
+    );
+  }
+
+  if (action.tool === "list_user_courses") {
+    return /\b(courses?|enrollments?|enrolled)\b/.test(prompt);
+  }
+
+  if (label && prompt.includes(label)) {
+    return true;
+  }
+
+  const meaningfulToolWords = tool
+    .split(" ")
+    .filter((word) => !["get", "list", "show", "user", "users", "by", "for"].includes(word));
+
+  return meaningfulToolWords.length > 0 && meaningfulToolWords.every((word) => prompt.includes(word));
+}
+
+function hasMatchingContinuationAction(opts: {
+  userMessage: string;
+  result: unknown;
+  availableTools: Tool[];
+}): boolean {
+  const availableToolNames = new Set(opts.availableTools.map((tool) => tool.name));
+  return collectStructuredActions(opts.result).some((action) => (
+    availableToolNames.has(action.tool) &&
+    action.args !== undefined &&
+    actionMatchesUserIntent(opts.userMessage, action)
+  ));
+}
+
+function wantsFullUserPresentation(userMessage: string): boolean {
+  const prompt = normalizeIntentText(userMessage);
+  return (
+    /\b(detailed?|details?|full|complete|expanded|all fields?|full profile|complete profile|raw)\b/.test(prompt) ||
+    /\beverything\b/.test(prompt)
+  );
+}
+
+function normalizeToolArgsForRequest(opts: {
+  toolName: string;
+  args: unknown;
+  userMessage: string;
+}): unknown {
+  if (opts.toolName !== "get_user" || !isRecord(opts.args)) {
+    return opts.args;
+  }
+
+  return {
+    ...opts.args,
+    presentation: wantsFullUserPresentation(opts.userMessage) ? "full" : "compact",
+  };
 }
 
 type ProviderTurnResult = {
@@ -98,6 +233,15 @@ async function runProviderTurn(opts: {
   send: (event: Record<string, unknown>) => void;
   onTextDelta?: () => void;
   onToolCall?: () => void;
+  normalizeToolCall?: (toolCall: {
+    id: string;
+    name: string;
+    args: unknown;
+  }) => {
+    id: string;
+    name: string;
+    args: unknown;
+  };
 }): Promise<ProviderTurnResult> {
   const toolCalls: ProviderTurnResult["toolCalls"] = [];
   let assistantText = "";
@@ -126,16 +270,21 @@ async function runProviderTurn(opts: {
       case "tool_call":
         toolCallStarted = true;
         opts.onToolCall?.();
-        toolCalls.push({
+        const toolCall = opts.normalizeToolCall?.({
           id: event.id,
           name: event.name,
           args: event.args,
-        });
+        }) ?? {
+          id: event.id,
+          name: event.name,
+          args: event.args,
+        };
+        toolCalls.push(toolCall);
         opts.send({
           type: "tool_call",
-          id: event.id,
-          name: event.name,
-          args: event.args,
+          id: toolCall.id,
+          name: toolCall.name,
+          args: toolCall.args,
         });
         break;
 
@@ -167,6 +316,7 @@ async function runProviderTurn(opts: {
 
 function shouldFinalizeAfterToolResult(opts: {
   userMessage: string;
+  availableTools: Tool[];
   toolCallsFromThisTurn: Array<{ id: string; name: string; args: unknown }>;
   toolResults: unknown[];
 }): boolean {
@@ -181,6 +331,14 @@ function shouldFinalizeAfterToolResult(opts: {
 
   const kind = result.data?.kind;
   if (kind !== "table" && kind !== "record" && kind !== "list") {
+    return false;
+  }
+
+  if (hasMatchingContinuationAction({
+    userMessage: opts.userMessage,
+    result,
+    availableTools: opts.availableTools,
+  })) {
     return false;
   }
 
@@ -310,6 +468,7 @@ export async function POST(request: NextRequest) {
         sessionId = body.sessionId || "unknown";
         promptCategory = body.promptCategory || "unknown";
         requestStart = Date.now();
+        const userMessage = body.message;
 
         // Initialize MCP server connection
         await ensureMCPReady();
@@ -328,13 +487,13 @@ export async function POST(request: NextRequest) {
         const alreadyInHistory =
           lastHistoryMsg &&
           lastHistoryMsg.role === "user" &&
-          lastHistoryMsg.content === body.message;
+          lastHistoryMsg.content === userMessage;
 
         const messages: Message[] = [
           { role: "system", content: systemPrompt },
         ];
         for (const m of historyMsgs) messages.push(m);
-        if (!alreadyInHistory) messages.push({ role: "user", content: body.message });
+        if (!alreadyInHistory) messages.push({ role: "user", content: userMessage });
 
         // Run the agent loop
         let maxIterations = 10; // Safety limit - prevent infinite loops
@@ -360,9 +519,26 @@ export async function POST(request: NextRequest) {
                 timeToFirstToolCallMs = Date.now() - requestStart;
               }
             },
+            normalizeToolCall: (toolCall) => ({
+              ...toolCall,
+              args: normalizeToolArgsForRequest({
+                toolName: toolCall.name,
+                args: toolCall.args,
+                userMessage,
+              }),
+            }),
           });
 
-          toolCallsAttempted += turn.toolCalls.length;
+          const toolCallsThisTurn = turn.toolCalls.map((tc) => ({
+            ...tc,
+            args: normalizeToolArgsForRequest({
+              toolName: tc.name,
+              args: tc.args,
+              userMessage,
+            }),
+          }));
+
+          toolCallsAttempted += toolCallsThisTurn.length;
           fullAssistantText += turn.assistantText;
           finalStopReason = turn.stopReason;
           completed = true;
@@ -376,7 +552,7 @@ export async function POST(request: NextRequest) {
           }
 
           // If the provider finished without tool calls, we're done
-          if (turn.toolCalls.length === 0 || turn.stopReason === "error") {
+          if (toolCallsThisTurn.length === 0 || turn.stopReason === "error") {
             break;
           }
 
@@ -384,7 +560,7 @@ export async function POST(request: NextRequest) {
           currentMessages.push({
             role: "assistant",
             content: turn.assistantText || null as unknown as string,
-            toolCalls: turn.toolCalls.map((tc) => ({
+            toolCalls: toolCallsThisTurn.map((tc) => ({
               id: tc.id,
               name: tc.name,
               args: tc.args,
@@ -395,7 +571,7 @@ export async function POST(request: NextRequest) {
           let toolFailureThisTurn = false;
           const toolResultsThisTurn: unknown[] = [];
 
-          for (const tc of turn.toolCalls) {
+          for (const tc of toolCallsThisTurn) {
             const toolStart = Date.now();
             try {
               const result = await callTool(tc.name, tc.args);
@@ -403,7 +579,10 @@ export async function POST(request: NextRequest) {
                 typeof result === "string"
                   ? result
                   : JSON.stringify(result, null, 2);
-              const llmResult = formatToolResultForLLM(result);
+              const llmResult = formatToolResultForLLM(
+                result,
+                tc.args?.presentation,
+              );
               const toolReturnedError = isToolErrorResult(result);
 
               if (toolReturnedError) {
@@ -490,13 +669,13 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          if (turn.toolCalls.length >= 2) {
+          if (toolCallsThisTurn.length >= 2) {
             logCompositePattern({
-              toolCalls: turn.toolCalls.map((tc) => ({
+              toolCalls: toolCallsThisTurn.map((tc) => ({
                 name: tc.name,
                 args: tc.args,
               })),
-              userPrompt: body.message,
+              userPrompt: userMessage,
             });
           }
 
@@ -505,8 +684,9 @@ export async function POST(request: NextRequest) {
           }
 
           if (shouldFinalizeAfterToolResult({
-            userMessage: body.message,
-            toolCallsFromThisTurn: turn.toolCalls,
+            userMessage,
+            availableTools: tools,
+            toolCallsFromThisTurn: toolCallsThisTurn,
             toolResults: toolResultsThisTurn,
           })) {
             const finalTurn = await runProviderTurn({
@@ -647,6 +827,7 @@ BEHAVIOR AFTER A TOOL CALL:
 - Do NOT suggest follow-up queries — the UI already shows them below your response.
 - Do NOT restate displayed fields, recreate tables, or describe the raw payload.
 - Do NOT say "included in the raw payload" or similar.
+- When you see a [UI: ...] hint in a tool result, acknowledge that the user is already looking at that specific view. Do NOT direct the user to go to a view or page they are already seeing. Instead, talk about the data within that view.
 - For detail tools like get_course, keep it to 1-2 sentences — the UI already shows the record.
 
 TOOL USAGE:

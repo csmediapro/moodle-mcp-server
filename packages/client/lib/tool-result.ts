@@ -87,7 +87,7 @@ function formatActionLine(action: Record<string, unknown>): string | null {
   return `- ${tool}${args}${label}`;
 }
 
-export function formatToolResultForLLM(result: unknown): string {
+export function formatToolResultForLLM(result: unknown, presentation?: "full" | "compact" | "table"): string {
   if (!isRecord(result) || !isRecord(result.context)) {
     return typeof result === "string" ? result : JSON.stringify(result, null, 2);
   }
@@ -100,6 +100,17 @@ export function formatToolResultForLLM(result: unknown): string {
     ? (result.resolution as ToolResultResolution)
     : null;
   const lines: string[] = [];
+
+  // Inject UI Hint to make the model aware of what the user is seeing
+  if (presentation) {
+    const hint =
+      presentation === "full"
+        ? "Full Detailed Record"
+        : presentation === "compact"
+        ? "Compact Summary Card"
+        : "Data Table";
+    lines.push(`[UI: The user is currently seeing a ${hint}]`);
+  }
 
   if (typeof result.error === "string" && result.error.trim()) {
     lines.push(`Error: ${result.error}`);

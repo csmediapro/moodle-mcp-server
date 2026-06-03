@@ -1,19 +1,15 @@
 {
   "moodle": {
-    "url": "https://your-moodle-instance.com",
+    "url": "https://moodle.instance.com",
     "apiVersion": "auto"
   },
   "server": {
-    "id": "mcp_8f3k2q9x",
-    "name": "Moodle MCP Server Demo",
-    "version": "0.1.0"
+    "name": "Moodle MCP Server",
+    "version": "0.1.0",
+    "id": "mcp_0p8sqp9v"
   },
   "logging": {
     "level": "info",
     "toolCallLog": "./logs/tool-calls.jsonl"
-  },
-  "plugins": {
-    "licenseKey": "moodle-lic-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "searchPaths": []
   }
 }

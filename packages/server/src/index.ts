@@ -16,6 +16,7 @@ import {
   loadConfig,
   loadToken,
   resolveConfigPath,
+  persistConfig,
 } from "./config/loader.js";
 import { emitStatus, initLogging, log } from "./logging/index.js";
 import { MoodleClient } from "./moodle/client.js";
@@ -25,6 +26,7 @@ import { warmupCaches } from "./tools/cache.js";
 import { createServer } from "./server/factory.js";
 import { loadPlugins } from "./plugins/loader.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { readFileSync } from "node:fs";
 
 async function main(): Promise<void> {
   const startupName = process.env.SERVER_NAME?.trim() || "Moodle MCP Server";
@@ -112,6 +114,26 @@ async function main(): Promise<void> {
     type: "moodle_probe_ok",
     capabilityCount: capabilities.functions.size,
   });
+
+  // Persist resolved site name to config.json for the client's static layout
+  if (capabilities.siteName && capabilities.siteName !== config.server.name) {
+    log("info", `Updating server name in config.json: ${config.server.name} -> ${capabilities.siteName}`);
+    
+    // Update active memory so the rest of the server uses the correct name
+    config.server.name = capabilities.siteName;
+
+    try {
+      const currentConfig = JSON.parse(readFileSync(resolveConfigPath(), "utf-8"));
+      if (currentConfig.server) {
+        currentConfig.server.name = capabilities.siteName;
+      } else {
+        currentConfig = { ...currentConfig, server: { name: capabilities.siteName } };
+      }
+      persistConfig(resolveConfigPath(), currentConfig);
+    } catch (e) {
+      log("warn", `Failed to persist site name to config.json: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 
   // 3. Warm caches (categories + courses)
   log("info", "Warming caches (categories + courses in parallel)…");

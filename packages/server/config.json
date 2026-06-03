@@ -4,7 +4,7 @@
     "apiVersion": "auto"
   },
   "server": {
-    "name": "moodle-mcp",
+    "name": "Moodle MCP Server",
     "version": "0.1.0",
     "id": "mcp_0p8sqp9v"
   },

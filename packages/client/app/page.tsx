@@ -211,7 +211,7 @@ export default function ChatPage() {
 
           try {
             const event: StreamEvent = JSON.parse(json);
-            processEvent(event, assistantId, setMessages);
+            processEvent(event, assistantId, setMessages, setSiteStatus);
             if (event.type === "done") {
               setMessages((prev) =>
                 prev.map((m) =>
@@ -230,6 +230,7 @@ export default function ChatPage() {
         }
       }
     } catch (e) {
+
       if (e instanceof DOMException && e.name === "AbortError") {
         setMessages((prev) => prev.filter((m) => m.id !== assistantId));
         return;
@@ -399,7 +400,7 @@ export default function ChatPage() {
             if (!json) continue;
             try {
               const event: StreamEvent = JSON.parse(json);
-              processEvent(event, assistantId, setMessages);
+              processEvent(event, assistantId, setMessages, setSiteStatus);
               if (event.type === "done") {
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -418,6 +419,7 @@ export default function ChatPage() {
           }
         }
       })
+
       .catch((e) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
         setMessages((prev) =>
@@ -448,6 +450,13 @@ export default function ChatPage() {
       131072;
     setTokenCount({ current: 0, max: resolvedCtxWindow });
   }, [selectedProvider, activeModel]);
+
+  // Sync document title with site status
+  useEffect(() => {
+    if (siteStatus?.serverName) {
+      document.title = `MCP Server | ${siteStatus.serverName}`;
+    }
+  }, [siteStatus?.serverName]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -491,7 +500,7 @@ export default function ChatPage() {
             {siteStatus?.serverName || "Moodle MCP Server"}
           </h1>
           <p className="text-xs text-slate-500">
-            {`Reference client for ${siteStatus?.serverName || "Moodle MCP Server"}`}
+            {`MCP Server | Reference Client`}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -846,7 +855,8 @@ function ToolResultHero({
 function processEvent(
   event: StreamEvent,
   assistantId: string,
-  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>
+  setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
+  setSiteStatus: React.Dispatch<React.SetStateAction<ChatPage["siteStatus"]>>
 ) {
   switch (event.type) {
     case "text_delta":
@@ -881,6 +891,21 @@ function processEvent(
       break;
 
     case "tool_result":
+      // Piggyback on get_site_info to update the global site name in the UI
+      if (event.result && typeof event.result === "object") {
+        const sr = isStructuredToolResult(event.result) ? event.result : null;
+        if (sr?.meta?.tool === "get_site_info" && sr.data?.record) {
+          const record = sr.data.record as Record<string, any>;
+          if (record.siteName) {
+            setSiteStatus((prev) => ({
+              ...prev,
+              serverName: record.siteName,
+              siteName: record.siteName,
+            }));
+          }
+        }
+      }
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId

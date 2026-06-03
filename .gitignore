@@ -9,3 +9,4 @@ packages/server/data/user-field-schema.json
 *.tsbuildinfo
 .DS_Store
 TODO.md
+packages/server/config.json
