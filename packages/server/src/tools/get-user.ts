@@ -6,7 +6,12 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
-import { normalizeCustomFields } from "../schema/user-fields.js";
+import type { ToolColumn, ToolEntity } from "./response-types.js";
+import {
+  loadSchema,
+  getDisplayFields,
+  normalizeCustomFields,
+} from "../schema/user-fields.js";
 
 export const name = "get_user";
 
@@ -19,6 +24,7 @@ export const inputSchema = z.object({
   id: z.number().int().positive().optional().describe("Exact Moodle user ID"),
   email: z.string().trim().email().optional().describe("Exact email address"),
   username: z.string().trim().min(1).optional().describe("Exact Moodle username"),
+  presentation: z.enum(["compact", "full"]).optional().default("compact").describe("How much user detail to display. Use compact for workflow steps and full when explicitly asked for all user details."),
 }).refine((value) => [value.id, value.email, value.username].filter((v) => v != null).length === 1, {
   message: "Provide exactly one of id, email, or username",
   path: ["id"],
@@ -55,6 +61,42 @@ type MoodleUser = {
   }>;
 };
 
+const DEFAULT_USER_COLUMNS: ToolColumn[] = [
+  { key: "id", label: "User ID" },
+  { key: "fullname", label: "Name" },
+  { key: "email", label: "Email" },
+  { key: "username", label: "Username" },
+  { key: "department", label: "Department" },
+  { key: "institution", label: "Institution" },
+  { key: "lastaccess", label: "Last Access" },
+  { key: "suspended", label: "Suspended" },
+];
+
+function buildUserEntity(user: Record<string, unknown>): ToolEntity {
+  const id = user.id as number;
+  return {
+    type: "user",
+    id,
+    label: typeof user.fullname === "string" ? user.fullname : `User ${id}`,
+    fields: {
+      email: user.email ?? null,
+      username: user.username ?? null,
+    },
+    actions: [
+      {
+        label: "Progress report",
+        tool: "get_user_progress_report",
+        args: { userid: id },
+      },
+      {
+        label: "List courses",
+        tool: "list_user_courses",
+        args: { userid: id },
+      },
+    ],
+  };
+}
+
 function normalizeUser(user: MoodleUser) {
   const customFields = normalizeCustomFields(user.customfields);
 
@@ -90,6 +132,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       id?: number;
       email?: string;
       username?: string;
+      presentation: "compact" | "full";
     };
 
     if (!hasCapability(caps, "core_user_get_users_by_field")) {
@@ -171,6 +214,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
 
     const record = normalizeUser(users[0]);
     const hasCustomFields = Object.keys(record.customfields).length > 0;
+    const schema = loadSchema();
+    const displayColumns = schema ? getDisplayFields(schema) : DEFAULT_USER_COLUMNS;
+    const entity = buildUserEntity(record);
+    const presentation = parsed.presentation === "full" ? "full_card" : "compact_card";
 
     return buildToolResponse({
       meta: {
@@ -182,7 +229,9 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       },
       data: {
         kind: "record",
+        presentation,
         title: `User Details — ${record.fullname}`,
+        ...(presentation === "compact_card" ? { columns: displayColumns } : {}),
         record,
       },
       context: {
@@ -196,7 +245,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           suspended: record.suspended,
           confirmed: record.confirmed,
           ...(hasCustomFields ? { customFieldCount: Object.keys(record.customfields).length } : {}),
+          schema_used: !!schema,
         },
+        primaryEntity: { type: "user", id: record.id },
+        entities: [entity],
         highlights: [
           `Lookup field: ${field}`,
           ...(hasCustomFields

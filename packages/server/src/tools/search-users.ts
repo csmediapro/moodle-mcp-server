@@ -6,6 +6,7 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
+import type { ToolColumn, ToolEntity } from "./response-types.js";
 import {
   loadSchema,
   getDisplayFields,
@@ -68,6 +69,42 @@ type MoodleUserSearchResponse = {
   users?: MoodleUser[];
   warnings?: Array<{ item?: string; itemid?: number; warningcode?: string; message?: string }>;
 };
+
+const DEFAULT_USER_COLUMNS: ToolColumn[] = [
+  { key: "id", label: "User ID" },
+  { key: "fullname", label: "Name" },
+  { key: "email", label: "Email" },
+  { key: "username", label: "Username" },
+  { key: "department", label: "Department" },
+  { key: "institution", label: "Institution" },
+  { key: "lastaccess", label: "Last Access" },
+  { key: "suspended", label: "Suspended" },
+];
+
+function buildUserEntity(user: Record<string, unknown>): ToolEntity {
+  const id = user.id as number;
+  return {
+    type: "user",
+    id,
+    label: typeof user.fullname === "string" ? user.fullname : `User ${id}`,
+    fields: {
+      email: user.email ?? null,
+      username: user.username ?? null,
+    },
+    actions: [
+      {
+        label: "Progress report",
+        tool: "get_user_progress_report",
+        args: { userid: id },
+      },
+      {
+        label: "List courses",
+        tool: "list_user_courses",
+        args: { userid: id },
+      },
+    ],
+  };
+}
 
 export function normalizeUser(user: MoodleUser) {
   const customFields = normalizeCustomFields(user.customfields);
@@ -171,18 +208,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
 
     // Load the user field schema for dynamic table columns
     const schema = loadSchema();
-    const tableColumns = schema
-      ? getDisplayFields(schema)
-      : [
-          { key: "id", label: "User ID" },
-          { key: "fullname", label: "Name" },
-          { key: "email", label: "Email" },
-          { key: "username", label: "Username" },
-          { key: "department", label: "Department" },
-          { key: "institution", label: "Institution" },
-          { key: "lastaccess", label: "Last Access" },
-          { key: "suspended", label: "Suspended" },
-        ];
+    const tableColumns = schema ? getDisplayFields(schema) : DEFAULT_USER_COLUMNS;
 
     // Collect all field keys that exist in the data (for context.fields)
     const fieldKeys = new Set<string>();
@@ -208,24 +234,33 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       schemaUsed: !!schema,
     });
 
+    const entities = pagedUsers.map(buildUserEntity);
+    const isSingleResult = allUsers.length === 1 && pagedUsers.length === 1;
+
     return buildToolResponse({
       meta: {
         tool: name,
-        title: "User Search Results",
-        entity: "user_directory",
+        title: isSingleResult ? `User Search Result — ${pagedUsers[0].fullname}` : "User Search Results",
+        entity: isSingleResult ? "user" : "user_directory",
+        ...(isSingleResult ? { entityId: pagedUsers[0].id as number } : {}),
         resultCount: pagedUsers.length,
       },
       data: {
-        kind: "table",
-        title: "User Search Results",
+        kind: isSingleResult ? "record" : "table",
+        presentation: isSingleResult ? "compact_card" : "table",
+        title: isSingleResult ? `User Search Result — ${pagedUsers[0].fullname}` : "User Search Results",
         columns: tableColumns,
-        rows: pagedUsers,
-        pagination: {
-          offset: parsed.offset,
-          limit: parsed.limit,
-          total: allUsers.length,
-          hasMore: parsed.offset + parsed.limit < allUsers.length,
-        },
+        ...(isSingleResult
+          ? { record: pagedUsers[0] }
+          : {
+              rows: pagedUsers,
+              pagination: {
+                offset: parsed.offset,
+                limit: parsed.limit,
+                total: allUsers.length,
+                hasMore: parsed.offset + parsed.limit < allUsers.length,
+              },
+            }),
       },
       context: {
         summary:
@@ -239,7 +274,12 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           limit: parsed.limit,
           filters_applied: criteriaEntries.length,
           schema_used: !!schema,
+          ...(isSingleResult ? { id: pagedUsers[0].id as number } : {}),
         },
+        entities,
+        ...(isSingleResult
+          ? { primaryEntity: { type: "user", id: pagedUsers[0].id as number } }
+          : {}),
         highlights: [
           `Filters: ${criteriaEntries.map(([key, value]) => `${key}=${value}`).join(", ")}`,
           ...(allUsers.length > parsed.limit ? [`Results were truncated to limit ${parsed.limit}.`] : []),
@@ -253,7 +293,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
         ],
         fields: [...fieldKeys].sort(),
       },
-      interactions: allUsers.length > 1
+      interactions: !isSingleResult && pagedUsers.length > 0
         ? {
             mode: "row_actions",
             prompt: "Multiple users matched. Select the correct row to continue.",
@@ -263,9 +303,17 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
             rowActions: [
               {
                 type: "button",
-                label: "Select",
-                template: "list courses for user {{id}}",
+                label: "Courses",
+                tool: "list_user_courses",
+                argsFromRow: { userid: "id" },
                 style: "primary",
+              },
+              {
+                type: "button",
+                label: "Progress",
+                tool: "get_user_progress_report",
+                argsFromRow: { userid: "id" },
+                style: "secondary",
               },
             ],
           }
