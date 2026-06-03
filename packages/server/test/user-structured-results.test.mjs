@@ -13,6 +13,10 @@ const bailey = {
   department: "Training",
   suspended: false,
   confirmed: true,
+  customfields: [
+    { type: "text", value: "ProTrain Academy", name: "School", shortname: "school" },
+    { type: "checkbox", value: "1", name: "Live Online Student", shortname: "liveonlinestudent" },
+  ],
 };
 
 const alex = {
@@ -133,4 +137,9 @@ test("get_user supports full card presentation for explicit detail views", async
   assert.equal(result.data.presentation, "full_card");
   assert.equal(result.data.columns, undefined);
   assert.equal(result.data.record.id, 14733);
+  assert.equal(result.data.record.customfields, undefined);
+  assert.equal(result.data.record.school, "ProTrain Academy");
+  assert.equal(result.data.record.liveonlinestudent, true);
+  assert.equal(result.context.metrics.customFieldCount, 2);
+  assert.ok(result.context.fields.includes("customfields.school"));
 });

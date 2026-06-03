@@ -97,10 +97,9 @@ function buildUserEntity(user: Record<string, unknown>): ToolEntity {
   };
 }
 
-function normalizeUser(user: MoodleUser) {
-  const customFields = normalizeCustomFields(user.customfields);
-
+function normalizeUser(user: MoodleUser, customFields: Record<string, string | boolean | null>) {
   return {
+    ...customFields,
     id: user.id,
     username: user.username,
     firstname: user.firstname,
@@ -122,7 +121,6 @@ function normalizeUser(user: MoodleUser) {
     firstaccess: user.firstaccess ? new Date(user.firstaccess * 1000).toISOString() : null,
     lastaccess: user.lastaccess ? new Date(user.lastaccess * 1000).toISOString() : null,
     lastcourseaccess: user.lastcourseaccess ? new Date(user.lastcourseaccess * 1000).toISOString() : null,
-    customfields: customFields,
   };
 }
 
@@ -212,8 +210,9 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       });
     }
 
-    const record = normalizeUser(users[0]);
-    const hasCustomFields = Object.keys(record.customfields).length > 0;
+    const customFields = normalizeCustomFields(users[0].customfields);
+    const record = normalizeUser(users[0], customFields);
+    const hasCustomFields = Object.keys(customFields).length > 0;
     const schema = loadSchema();
     const displayColumns = schema ? getDisplayFields(schema) : DEFAULT_USER_COLUMNS;
     const entity = buildUserEntity(record);
@@ -244,7 +243,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           id: record.id,
           suspended: record.suspended,
           confirmed: record.confirmed,
-          ...(hasCustomFields ? { customFieldCount: Object.keys(record.customfields).length } : {}),
+          ...(hasCustomFields ? { customFieldCount: Object.keys(customFields).length } : {}),
           schema_used: !!schema,
         },
         primaryEntity: { type: "user", id: record.id },
@@ -252,7 +251,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
         highlights: [
           `Lookup field: ${field}`,
           ...(hasCustomFields
-            ? [`Custom fields: ${Object.entries(record.customfields).map(([k, v]) => `${k}=${v}`).join(", ")}`]
+            ? [`Custom fields: ${Object.entries(customFields).map(([k, v]) => `${k}=${v}`).join(", ")}`]
             : []),
         ],
         suggestedQueries: [
@@ -260,7 +259,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           `List users in course [Course ID]`,
           `Get completion report for user ${record.id} in course [Course ID]`,
         ],
-        fields: Object.keys(record),
+        fields: [
+          ...Object.keys(record),
+          ...Object.keys(customFields).map((key) => `customfields.${key}`),
+        ],
       },
     });
   };
