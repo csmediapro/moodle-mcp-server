@@ -37,7 +37,7 @@ const DAY_MS = 86_400_000;
 
 export const plugin: MCPServerPlugin = {
   manifest: {
-    id: "user-activity",
+    id: "get-user-activity",
     name: "User Activity Feed",
     version: "0.1.0",
     apiVersion: "1",

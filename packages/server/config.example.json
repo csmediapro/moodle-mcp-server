@@ -10,7 +10,7 @@
   },
   "plugins": {
     "searchPaths": [
-      { "path": "./dist/plugins/local", "requiresLicense": true }
+      { "path": "./dist/plugins/get-user-activity", "requiresLicense": true }
     ],
     "licenseKey": ""
   }
