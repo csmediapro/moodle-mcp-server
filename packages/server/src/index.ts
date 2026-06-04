@@ -123,7 +123,7 @@ async function main(): Promise<void> {
     config.server.name = capabilities.siteName;
 
     try {
-      const currentConfig = JSON.parse(readFileSync(resolveConfigPath(), "utf-8"));
+      let currentConfig = JSON.parse(readFileSync(resolveConfigPath(), "utf-8"));
       if (currentConfig.server) {
         currentConfig.server.name = capabilities.siteName;
       } else {

@@ -1,0 +1,7 @@
+{
+  "name": "@moodle-mcp/plugin-user-activity",
+  "version": "0.1.0",
+  "description": "Premium compound tool: get per-user recent course activity by chaining get_recent_courses → get_updates_since",
+  "type": "module",
+  "main": "index.js"
+}

@@ -68,6 +68,16 @@ function createClientId(): string {
 
 // ─── Page Component ───────────────────────────────────────────────────────
 
+type SiteStatus = {
+  serverName?: string;
+  siteName?: string;
+  release?: string;
+  version?: string;
+  username?: string;
+  functionCount?: number;
+  courseCount?: number;
+};
+
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -76,15 +86,7 @@ export default function ChatPage() {
   const [activeProvider, setActiveProvider] = useState("");
   const [activeModel, setActiveModel] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [siteStatus, setSiteStatus] = useState<{
-    serverName?: string;
-    siteName?: string;
-    release?: string;
-    version?: string;
-    username?: string;
-    functionCount?: number;
-    courseCount?: number;
-  } | null>(null);
+  const [siteStatus, setSiteStatus] = useState<SiteStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [providersLoading, setProvidersLoading] = useState(true);
   const welcomeFired = useRef(false);
@@ -856,7 +858,7 @@ function processEvent(
   event: StreamEvent,
   assistantId: string,
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>,
-  setSiteStatus: React.Dispatch<React.SetStateAction<ChatPage["siteStatus"]>>
+  setSiteStatus: React.Dispatch<React.SetStateAction<SiteStatus | null>>
 ) {
   switch (event.type) {
     case "text_delta":

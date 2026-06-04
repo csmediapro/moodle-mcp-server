@@ -581,7 +581,11 @@ export async function POST(request: NextRequest) {
                   : JSON.stringify(result, null, 2);
               const llmResult = formatToolResultForLLM(
                 result,
-                tc.args?.presentation,
+                (tc.args as Record<string, unknown> | undefined)?.presentation as
+                  | "full"
+                  | "compact"
+                  | "table"
+                  | undefined,
               );
               const toolReturnedError = isToolErrorResult(result);
 
