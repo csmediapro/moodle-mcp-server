@@ -27,12 +27,16 @@ export const plugin: MCPServerPlugin = {
     version: "1.0.0",
     apiVersion: "1",
     description: "Example plugin showing the public contract",
-    requiresLicense: false,
     requiredCapabilities: [],
     tools: ["hello_plugin"],
   },
   shutdown: async (ctx) => {
     ctx.log("info", "hello_plugin shutting down");
+  },
+  agent: {
+    promptRules: [
+      "Use hello_plugin when the user asks for a plugin greeting.",
+    ],
   },
   tools: [
     {
@@ -49,7 +53,6 @@ export const plugin: MCPServerPlugin = {
           ok: true,
           greeting: `Hello, ${input.name ?? "world"}`,
           server: ctx.config.serverName,
-          licensed: ctx.license.status === "valid",
         };
       },
     },
@@ -65,9 +68,10 @@ export default plugin;
 2. Give the plugin a stable `manifest.id`
 3. Declare every tool name in `manifest.tools`
 4. Define one `tools[]` entry per declared tool
-5. Compile the plugin to `.js`
-6. Place the compiled output in a configured plugin search path
-7. Restart the core
+5. Optionally define `agent` registration for plugin-owned prompt rules, deterministic routes, rewrites, or continuation actions
+6. Compile the plugin to `.js`
+7. Place the compiled output in a configured plugin search path
+8. Restart the core
 
 Supported search-path layouts:
 
@@ -85,35 +89,17 @@ Add a plugin search path in `packages/server/config.json`.
   "plugins": {
     "searchPaths": [
       {
-        "path": "./plugins-local",
-        "requiresLicense": false
+        "path": "./plugins-local"
       }
     ]
   }
 }
 ```
 
-For premium paths:
-
-```json
-{
-  "plugins": {
-    "searchPaths": [
-      {
-        "path": "./plugins-premium",
-        "requiresLicense": true
-      }
-    ]
-  }
-}
-```
-
-If a search path requires a license, set `PLUGINS_LICENSE_KEY` before starting the server.
-
-Runtime note:
-
-- the current core still accepts `MOODLE_PLUGIN_KEY` as a fallback
-- new automation should prefer `PLUGINS_LICENSE_KEY`
+The core does not enforce plugin licensing. Agent edge, packaging, or deployment
+automation controls which plugin files and search paths are visible to the core.
+If the core can see a structurally valid, capability-compatible plugin, it
+registers it.
 
 ## Capability Gating
 
@@ -147,6 +133,51 @@ Bad uses:
 - hiding required failures
 
 If initialization throws, the plugin is not loaded.
+
+## Optional Agent Registration
+
+Use `agent` when the reference client needs plugin-specific behavior. Do this
+inside the plugin instead of editing `packages/client/app/api/chat/route.ts`.
+
+Supported registration blocks:
+
+- `promptRules`: short system-prompt rules active only while the plugin is loaded
+- `intentRoutes`: regex routes that enrich matching tool calls with captured args
+- `toolRewrites`: corrections for common wrong tool choices
+- `continuationActions`: keyword matching for structured actions returned by tools
+
+Example:
+
+```ts
+agent: {
+  promptRules: [
+    "For site-wide user directory requests with field/value filters, call list_users directly.",
+  ],
+  intentRoutes: [
+    {
+      id: "users-with-field-value",
+      match: "\\busers?\\b.*?\\bwith\\s+([A-Za-z][\\w -]{0,50}?)\\s*=\\s*([^,.;?\\n]+)",
+      flags: "i",
+      tool: "list_users",
+      args: { limit: 100, offset: 0 },
+      captures: [
+        {
+          kind: "filter",
+          target: "filters",
+          fieldGroup: 1,
+          valueGroup: 2,
+          fieldTransform: "filterKey",
+          valueTransform: "filterValue",
+        },
+      ],
+      exclude: ["\\bschema\\b"],
+    },
+  ],
+}
+```
+
+Keep these rules declarative. The client evaluates data supplied by the loaded
+plugin; it does not import or execute plugin code.
 
 ## Optional Shutdown
 
@@ -182,7 +213,6 @@ Prefer:
 
 - explicit thrown errors with concrete reasons
 - clear capability checks
-- license-aware errors
 - deterministic startup failure behavior
 - idempotent startup and shutdown behavior where practical
 
@@ -210,6 +240,7 @@ Right now the contract is intentionally narrow:
 - no dependency graph between plugins
 - no lifecycle beyond load-time initialization plus optional shutdown
 - no hot reload; restart required
+- no arbitrary client-side plugin code execution; client behavior must be registered declaratively through `agent`
 
 That is deliberate. Keep the first contract small enough to stay stable.
 

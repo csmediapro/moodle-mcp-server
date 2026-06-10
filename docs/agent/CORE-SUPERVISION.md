@@ -249,8 +249,6 @@ Current `plugin_skipped.reasonCode` values:
 - `export_missing`
 - `manifest_invalid`
 - `tools_invalid`
-- `license_missing`
-- `license_invalid`
 - `capability_missing`
 - `initialize_failed`
 
@@ -264,13 +262,7 @@ The supervisor may control startup through:
 - `SERVER_ID`
 - `SERVER_NAME`
 - `SERVER_VERSION`
-- `PLUGINS_LICENSE_KEY`
 - `MOODLE_TOKEN`
-
-Legacy note:
-
-- `MOODLE_PLUGIN_KEY` is still accepted by the current runtime as a fallback plugin-license source
-- new supervisor code should prefer `PLUGINS_LICENSE_KEY`
 
 `server.id` rules:
 

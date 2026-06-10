@@ -5,7 +5,6 @@ export const plugin = {
     version: "1.0.0",
     apiVersion: "1",
     description: "Example plugin showing the public runtime contract",
-    requiresLicense: false,
     requiredCapabilities: [],
     tools: ["hello_plugin"],
   },
@@ -14,6 +13,11 @@ export const plugin = {
   },
   shutdown: (ctx) => {
     ctx.log("info", "hello_plugin shutting down");
+  },
+  agent: {
+    promptRules: [
+      "Use hello_plugin when the user asks for a plugin greeting.",
+    ],
   },
   tools: [
     {
@@ -40,7 +44,6 @@ export const plugin = {
           ok: true,
           greeting: `Hello, ${name}`,
           server: ctx.config.serverName,
-          licensed: ctx.license.status === "valid",
         };
       },
     },

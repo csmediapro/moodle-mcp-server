@@ -12,12 +12,13 @@ Instead of learning report builders, writing SQL, or exporting CSVs, you ask que
 
 ## Features
 
-- **14 core query tools** — course catalog, completion reports, user enrollment, assignments, activity feeds, category navigation, and more
+- **Core query tools** — course catalog, user enrollment, assignments, category navigation, site metadata, user lookup, and cache management
+- **Premium reporting plugins** — optional tools such as course completion reports and recent activity can be attached through the plugin runtime
 - **LLM-agnostic** — works with Claude, GPT, Gemini, Ollama, or any MCP-compatible AI client
 - **Zero LMS modification** — uses Moodle's existing Web Services API, no plugin installation required
 - **Compliance-ready data handling** — secure, efficient data processing with privacy by design
 - **Read-only** — never modifies Moodle data, safe for production
-- **Plugin-extensible** — drop new tool modules into a directory, they auto-register
+- **Plugin-extensible** — drop new tool modules into a directory; tools and optional agent routing hints auto-register at runtime
 
 ---
 
@@ -57,6 +58,13 @@ because it can include site-specific custom profile fields.
 After connecting to a Moodle site, run the `refresh_user_field_schema` tool once to
 discover available standard and custom user fields. A minimal example shape is included
 at `packages/server/data/user-field-schema.example.json`.
+
+The `user-directory` plugin stores a normalized full-user cache with custom profile
+fields flattened into top-level keys such as `school`. Once that cache exists,
+`list_users` can filter cached users in memory, and `summarize_user_directory_field`
+can return cached distinct values and counts. For example, "show unique schools" or
+"show schools and number of users assigned to each one" summarizes the cached
+`school` field without another Moodle fetch.
 
 ### Config identity
 
@@ -185,13 +193,14 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 | `get_site_info` | Instance overview — site name, version, course count |
 | `get_user` | Detail view for a Moodle user |
 | `list_user_courses` | Courses for a specific user |
-| `search_users` | User search by exact profile fields |
+| `search_users` | User search by standard Moodle identity fields |
 | `search_courses_by_name` | Search for courses by name with partial matching and interactive selection |
 
 ### Premium Plugins (available separately)
 
 - **Advanced Reporting** — gradebooks, cross-course comparison, custom report builder
 - **User Analytics** — progress tracking, engagement scoring, risk flags
+- **User Directory** — cached directory listing and structured filtering across standard and custom profile fields
 - **Compliance Pack** — certification tracking, expiration alerts, audit exports
 
 
@@ -209,6 +218,7 @@ AI Agent (Claude / GPT / Gemini / Ollama / local)
     ▼  MCP Protocol
 `moodle-mcp-server`
     ├── Tool Registry (core + plugins)
+    ├── Agent Runtime Config (core + plugin rules)
     ├── Optimized Data Layer (secure, efficient data handling)
     └── Moodle Client (REST API calls)
     │

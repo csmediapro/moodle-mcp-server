@@ -11,8 +11,7 @@ Example config:
   "plugins": {
     "searchPaths": [
       {
-        "path": "./examples/plugins/hello-plugin",
-        "requiresLicense": false
+        "path": "./examples/plugins/hello-plugin"
       }
     ]
   }

@@ -11,6 +11,7 @@ export interface MCPServerPlugin {
   manifest: PluginManifest;
   initialize?: (ctx: PluginContext) => Promise<void> | void;
   shutdown?: (ctx: PluginContext) => Promise<void> | void;
+  agent?: AgentRegistration;
   tools: ToolModule[];
 }
 ```
@@ -26,7 +27,6 @@ export interface PluginManifest {
   version: string;
   apiVersion: "1";
   description: string;
-  requiresLicense: boolean;
   requiredCapabilities: string[];
   tools: string[];
 }
@@ -39,7 +39,6 @@ Field meanings:
 - `version`: plugin package version
 - `apiVersion`: plugin contract version implemented by the plugin; current value is `"1"`
 - `description`: short human-readable summary
-- `requiresLicense`: whether the plugin requires a valid premium license result to activate
 - `requiredCapabilities`: Moodle Web Services functions the plugin requires before load
 - `tools`: declared tool names exposed by the plugin
 
@@ -56,7 +55,6 @@ export interface PluginContext {
     serverName: string;
     serverVersion: string;
   };
-  license: LicenseResult;
 }
 ```
 
@@ -66,35 +64,15 @@ The context contract is intentionally narrow:
 - `capabilities`: startup-probed Moodle function set
 - `log`: shared structured logger
 - `config`: stable host metadata currently exposed to plugins
-- `license`: resolved license state for this plugin load
 
 Plugins should treat this as the entire supported host API. Do not reach into core internals outside this contract.
 
-## License Result
+## Entitlements
 
-License state is explicit and inspectable.
-
-```ts
-type LicenseResult =
-  | {
-      status: "valid";
-      tier: string;
-      featuresEnabled: string[];
-      identity?: string;
-      expiresAt?: string;
-    }
-  | {
-      status: "invalid" | "missing";
-      reason: string;
-      featuresEnabled: string[];
-    };
-```
-
-Notes:
-
-- Plugins that require a license are not loaded unless `license.status === "valid"`
-- The loader logs license failures clearly and skips the plugin deterministically
-- Tool handlers still receive the resolved license result so plugins can make narrower feature decisions if needed
+The core does not enforce plugin licensing or entitlements. Agent edge, packaging,
+or deployment automation decides which plugin files and search paths are visible
+to the core. If the core can see a structurally valid, capability-compatible
+plugin, it registers it.
 
 ## Tool Module Shape
 
@@ -119,6 +97,130 @@ Rules:
 - `createHandler` receives `PluginContext` and must return the async handler function
 
 If a plugin tool name collides with an existing tool, the core logs the shadowing event and skips that tool.
+
+## Agent Registration
+
+Plugins may optionally register declarative agent behavior through `agent`.
+This keeps the client and core agent loop unaware of plugin-specific tool names
+until the plugin is actually loaded.
+
+```ts
+export interface AgentRegistration {
+  promptRules?: string[];
+  intentRoutes?: AgentIntentRoute[];
+  toolRewrites?: AgentToolRewrite[];
+  continuationActions?: AgentContinuationAction[];
+}
+```
+
+### Prompt Rules
+
+`promptRules` are appended to the client system prompt after startup. Use them
+for short behavioral guidance that should only exist while the plugin is loaded.
+
+```ts
+agent: {
+  promptRules: [
+    "For site-wide user directory requests with field/value filters, call list_users directly."
+  ]
+}
+```
+
+### Intent Routes
+
+`intentRoutes` are deterministic regex routes. The client evaluates them against
+the user message and can use them to enrich a matching tool call with captured
+arguments.
+
+```ts
+agent: {
+  intentRoutes: [
+    {
+      id: "users-with-school",
+      match: "\\busers?\\b.*?\\bwith\\s+(school)\\s*=\\s*([^,.;?\\n]+)",
+      flags: "i",
+      tool: "list_users",
+      args: { limit: 100, offset: 0 },
+      captures: [
+        {
+          kind: "filter",
+          target: "filters",
+          fieldGroup: 1,
+          valueGroup: 2,
+          fieldTransform: "filterKey",
+          valueTransform: "filterValue"
+        }
+      ],
+      exclude: ["\\bschema\\b"]
+    }
+  ]
+}
+```
+
+Supported capture kinds:
+
+- `arg`: writes a captured value to one top-level tool argument
+- `filter`: writes a captured field/value pair into a record argument such as `filters`
+
+Supported transforms:
+
+- `filterKey`: normalizes a human field label into a lower-case key
+- `filterValue`: trims quotes, trailing politeness, and simple paging suffixes
+- `number`: parses an integer
+
+### Tool Rewrites
+
+`toolRewrites` are deterministic corrections for common model mistakes. They
+only run when the model has already attempted `whenTool`, and the user message
+matches the rule.
+
+```ts
+agent: {
+  toolRewrites: [
+    {
+      id: "schema-to-directory-list",
+      whenTool: "get_user_field_schema",
+      match: "\\busers?\\b.*?\\bwith\\s+(school)\\s*=\\s*([^,.;?\\n]+)",
+      flags: "i",
+      tool: "list_users",
+      args: { limit: 100, offset: 0 },
+      captures: [
+        {
+          kind: "filter",
+          target: "filters",
+          fieldGroup: 1,
+          valueGroup: 2,
+          fieldTransform: "filterKey",
+          valueTransform: "filterValue"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Continuation Actions
+
+`continuationActions` tell the client when a structured action from a tool
+result matches the user's next request. This replaces client hardcoding such as
+"if the tool is this plugin tool and the prompt says reports".
+
+```ts
+agent: {
+  continuationActions: [
+    {
+      tool: "get_user_progress_report",
+      keywords: ["progress", "completion", "grade", "report"]
+    }
+  ]
+}
+```
+
+### Runtime Exposure
+
+The core exposes merged core and plugin registrations through
+`get_agent_runtime_config`. The reference client loads this once after MCP
+startup. Removing a plugin removes its tools and its agent behavior together.
 
 ## Tool Result Shape
 
@@ -218,9 +320,9 @@ At startup, the core:
 3. Imports each candidate module
 4. Resolves `plugin` or default export
 5. Validates the manifest and tools structure
-6. Resolves license state
-7. Verifies required Moodle capabilities
-8. Calls optional `initialize(ctx)`
+6. Verifies required Moodle capabilities
+7. Calls optional `initialize(ctx)`
+8. Preserves optional `agent` registration for runtime client configuration
 9. Registers declared tools into the MCP tool registry
 10. Calls optional `shutdown(ctx)` during core shutdown if the plugin loaded successfully
 
@@ -230,7 +332,6 @@ Observable failure cases:
 - invalid package metadata or missing package entrypoint
 - invalid manifest
 - missing or malformed tool entries
-- invalid or missing license for licensed plugins
 - missing required Moodle capabilities
 - manifest/tool declaration mismatches
 - initialization failure
