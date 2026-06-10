@@ -6,7 +6,6 @@
  *   - Filesystem-based: drop a directory of compiled .js files into a
  *     search path, they auto-register on next server start.
  *   - Each plugin is a standalone npm package that builds independently.
- *   - Premium plugins validate a license key before their tools activate.
  */
 
 import { readdirSync, existsSync, statSync, readFileSync } from "node:fs";
@@ -21,7 +20,6 @@ import {
   type PluginSearchPath,
   type ToolModule,
 } from "./contracts.js";
-import { validateLicense } from "./license.js";
 import type { StatusEvent } from "../logging/index.js";
 
 /**
@@ -41,7 +39,6 @@ export interface PluginLoaderContextBase {
 export async function loadPlugins(
   searchPaths: PluginSearchPath[],
   baseContext: PluginLoaderContextBase,
-  licenseKey?: string
 ): Promise<LoadedPlugin[]> {
   const loaded: LoadedPlugin[] = [];
 
@@ -67,7 +64,7 @@ export async function loadPlugins(
       for (const entryPath of candidates) {
 
         try {
-          const mod = await loadModule(entryPath, sp, baseContext, licenseKey);
+          const mod = await loadModule(entryPath, baseContext);
           if (mod !== null) {
             loaded.push(mod);
             baseContext.log(
@@ -140,7 +137,14 @@ function resolvePluginModulePath(
   if (stats.isFile()) {
     const name = entryPath.split("/").pop() ?? "";
     if (!entryPath.endsWith(".js")) return null;
-    if (name === "index.js" || name === "loader.js" || name === "license.js") return null;
+    if (
+      name === "index.js" ||
+      name === "loader.js" ||
+      name === "license.js" ||
+      name === "contracts.js"
+    ) {
+      return null;
+    }
     return entryPath;
   }
 
@@ -207,9 +211,7 @@ function resolvePluginModulePath(
  */
 async function loadModule(
   filePath: string,
-  searchPath: PluginSearchPath,
   baseContext: PluginLoaderContextBase,
-  licenseKey?: string,
 ): Promise<LoadedPlugin | null> {
   const imported = await import(filePath) as Record<string, unknown>;
   const plugin = extractPlugin(
@@ -219,29 +221,6 @@ async function loadModule(
     baseContext.emitStatus,
   );
   if (plugin === null) {
-    return null;
-  }
-
-  const license = plugin.manifest.requiresLicense || searchPath.requiresLicense
-    ? validateLicense(licenseKey)
-    : {
-        status: "valid" as const,
-        tier: "oss",
-        featuresEnabled: [],
-      };
-
-  if (license.status !== "valid") {
-    baseContext.log(
-      "warn",
-      `Skipping plugin ${plugin.manifest.id}: ${license.reason}`,
-    );
-    baseContext.emitStatus?.({
-      type: "plugin_skipped",
-      reasonCode: license.status === "missing" ? "license_missing" : "license_invalid",
-      message: license.reason,
-      entryPath: filePath,
-      pluginId: plugin.manifest.id,
-    });
     return null;
   }
 
@@ -263,10 +242,7 @@ async function loadModule(
     return null;
   }
 
-  const ctx: PluginContext = {
-    ...baseContext,
-    license,
-  };
+  const ctx: PluginContext = baseContext;
 
   if (plugin.initialize) {
     try {
@@ -285,8 +261,8 @@ async function loadModule(
 
   return {
     manifest: plugin.manifest,
-    license,
     tools: plugin.tools,
+    agent: plugin.agent,
     shutdown: plugin.shutdown ? () => plugin.shutdown!(ctx) : undefined,
   };
 }
@@ -379,6 +355,7 @@ function extractPlugin(
       manifest,
       initialize: pluginRecord.initialize as MCPServerPlugin["initialize"],
       shutdown: pluginRecord.shutdown as MCPServerPlugin["shutdown"],
+      agent: pluginRecord.agent as MCPServerPlugin["agent"],
       tools,
     };
   } catch (e) {

@@ -16,6 +16,7 @@ import {
   loadConfig,
   loadToken,
   resolveConfigPath,
+  resolvePluginSearchPaths,
   persistConfig,
 } from "./config/loader.js";
 import { emitStatus, initLogging, log } from "./logging/index.js";
@@ -86,9 +87,6 @@ async function main(): Promise<void> {
   log("info", `Server version: ${config.server.version}`);
   log("info", `Moodle URL: ${config.moodle.url}`);
 
-  // Optional license key for premium plugins
-  const licenseKey = config.plugins.licenseKey ?? process.env.MOODLE_PLUGIN_KEY;
-
   // 1. Create Moodle API client
   const moodleClient = new MoodleClient(config.moodle.url, token);
 
@@ -153,7 +151,7 @@ async function main(): Promise<void> {
   let extraPlugins;
   try {
     extraPlugins = await loadPlugins(
-      config.plugins.searchPaths,
+      resolvePluginSearchPaths(config.plugins.searchPaths),
       {
         moodleClient,
         capabilities,
@@ -164,7 +162,6 @@ async function main(): Promise<void> {
           serverVersion: config.server.version,
         },
       },
-      licenseKey,
     );
   } catch (err) {
     emitStatus({
