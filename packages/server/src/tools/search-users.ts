@@ -17,7 +17,9 @@ export const name = "search_users";
 
 export const description =
   "Search Moodle users by firstname, lastname, email, username, or idnumber. " +
-  "Provide at least one filter. Moodle performs the filtering first; this tool does not preload the full user directory. " +
+  "Use this for direct person lookup, not structured directory filtering or reports. " +
+  "Provide at least one standard Moodle search field. Moodle performs the filtering first; this tool does not preload the full user directory. " +
+  "If a directory listing plugin is installed, prefer that plugin for filter-style requests. " +
   "If multiple users match, do not guess downstream actions; select the correct user ID first.";
 
 export const inputSchema = z.object({
@@ -196,13 +198,12 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
     const pagedUsers = allUsers.slice(parsed.offset, parsed.offset + parsed.limit);
     const warnings = (result.warnings ?? []).map((warning) => warning.message).filter(Boolean) as string[];
 
-    // Warn if Moodle returned invalidfieldparameter for custom field filters
+    // Warn if Moodle rejected criteria outside the native user search fields.
     const hasInvalidFieldWarning = warnings.some((w) => w.includes("invalidfieldparameter"));
     if (hasInvalidFieldWarning) {
       warnings.push(
-        "Some search criteria were ignored by Moodle. Custom profile fields (e.g. school) " +
-        "are not supported as Moodle-native search filters. Use list_course_users for " +
-        "course-scoped filtering, or refine with standard fields.",
+        "Some search criteria were ignored by Moodle. This core tool only supports Moodle-native user search fields. " +
+        "For structured directory filtering, check get_capabilities for an installed directory/listing plugin.",
       );
     }
 

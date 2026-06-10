@@ -1,0 +1,8 @@
+{
+  "name": "@moodle-mcp/user-directory",
+  "version": "0.1.0",
+  "description": "Plugin: cached Moodle user directory listing and filtering",
+  "main": "index.js",
+  "type": "module",
+  "private": true
+}

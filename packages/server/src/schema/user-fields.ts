@@ -86,6 +86,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 function schemaFilePath(): string {
+  if (process.env.MOODLE_USER_FIELD_SCHEMA_PATH) {
+    return resolve(process.env.MOODLE_USER_FIELD_SCHEMA_PATH);
+  }
+
   // Resolve from source tree during dev, dist during production
   // Always store in packages/server/data/
   const serverRoot = resolve(__dirname, "..", "..");

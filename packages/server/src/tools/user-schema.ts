@@ -73,9 +73,11 @@ function buildUserFieldSchemaTable(schema: UserFieldSchema) {
 export const getSchemaName = "get_user_field_schema";
 
 export const getSchemaDescription =
-  "Return the current user field schema for this Moodle instance. " +
+  "Admin/config tool: return the current user field schema for this Moodle instance. " +
   "Shows every known user field (standard + custom), its type, source, " +
   "and whether it is currently set to display in tables or accept filters. " +
+  "Use this when the user explicitly asks to inspect, configure, show, refresh, or troubleshoot the user field schema or table columns. " +
+  "Do not use this before ordinary requests to list or filter users; call list_users directly with filters instead. " +
   "If no schema exists yet, the response will tell you to run refresh_user_field_schema. " +
   "No parameters required.";
 
@@ -98,7 +100,7 @@ export function createGetSchemaHandler() {
         },
         summary:
           "No user field schema exists for this Moodle instance yet. " +
-          "The schema controls which fields appear in user tables and which are filterable.",
+          "The schema controls which fields appear in user tables and which fields schema-aware tools may use as filters.",
         meta: {
           tool: getSchemaName,
           title: "User Field Schema",
@@ -158,7 +160,7 @@ export function createGetSchemaHandler() {
         summary:
           `Schema v${schema.schemaVersion} — ${fieldList.length} total fields ` +
           `(${standardCount} standard, ${customCount} custom). ` +
-          `${displayCount} displayed in tables, ${filterableCount} available as filters. ` +
+          `${displayCount} displayed in tables, ${filterableCount} available to schema-aware tools as filters. ` +
           `Use update_user_field_schema to toggle display or filterable on any field.`,
         highlights: [
           `Generated: ${schema.generatedAt}`,
@@ -176,7 +178,7 @@ export function createGetSchemaHandler() {
         suggestedQueries: [
           "Refresh the user field schema",
           "Hide [field name] from user tables",
-          "Search users by [criteria]",
+          "Show fields available to user directory tools",
         ],
         fields: fieldList.map((f) => f.key),
       },
@@ -422,20 +424,21 @@ export const updateSchemaDescription =
   "Only include fields you want to change — omitted fields keep their current settings. " +
   "Use this when the operator wants to: " +
   "show or hide a field in user search result tables (display), " +
-  "or enable/disable a field for search filtering (filterable). " +
+  "or enable/disable a field for schema-aware directory filtering (filterable). " +
+  "This is an admin/configuration tool, not a prerequisite for ordinary filtered user-list requests. " +
   "FIELD KEYS: Use the exact short field keys from get_user_field_schema " +
   "(common keys: id, fullname, email, username, department, institution, city, country, " +
-  "firstaccess, lastaccess, suspended, confirmed, idnumber, school, eBooksAccess, Health). " +
+  "firstaccess, lastaccess, suspended, confirmed, idnumber). " +
   "For a single field, prefer the shortcut fields: field='username', display=false. " +
   "EXAMPLES: " +
   "'hide username from user tables' → " +
   '{"field":"username","display":false}. ' +
   "'hide firstaccess and department from user tables' → " +
   '{"updates":{"firstaccess":{"display":false},"department":{"display":false}}}. ' +
-  "'make city visible in tables and searchable' → " +
+  "'make city visible in tables and available to schema-aware filters' → " +
   '{"updates":{"city":{"display":true,"filterable":true}}}. ' +
-  "'show school custom field in tables' → " +
-  '{"updates":{"school":{"display":true}}}."';
+  "'show a discovered custom field in tables' → " +
+  '{"updates":{"customFieldKey":{"display":true}}}."';
 
 const fieldUpdateSchema = z.object({
   display: z
@@ -445,7 +448,7 @@ const fieldUpdateSchema = z.object({
   filterable: z
     .boolean()
     .optional()
-    .describe("Allow this field to be used as a search filter"),
+    .describe("Allow schema-aware directory tools to use this field as a filter"),
 });
 
 export const updateSchemaInput = z.object({
@@ -469,7 +472,7 @@ export const updateSchemaInput = z.object({
   filterable: z
     .boolean()
     .optional()
-    .describe("Shortcut value for whether the single field can be used as a filter"),
+    .describe("Shortcut value for whether schema-aware directory tools can use the single field as a filter"),
 }).refine(
   (value) => value.updates !== undefined || value.field !== undefined,
   {
@@ -642,17 +645,17 @@ export const reorderSchemaName = "reorder_user_field_schema";
 export const reorderSchemaDescription =
   "Reorder displayed user table columns in the user field schema. " +
   "Use this when the operator asks to move a column left, right, first, last, before another field, or after another field. " +
-  "The field and target values must be exact field keys from get_user_field_schema, such as id, fullname, email, lastaccess, school, eBooksAccess, Health, or suspended. " +
+  "The field and target values must be exact field keys from get_user_field_schema, such as id, fullname, email, lastaccess, department, institution, or suspended. " +
   "Natural language examples: " +
   "'move last access all the way to the right' → {\"field\":\"lastaccess\",\"position\":\"end\"}. " +
-  "'move school after email' → {\"field\":\"school\",\"after\":\"email\"}. " +
+  "'move department after email' → {\"field\":\"department\",\"after\":\"email\"}. " +
   "'put suspended before lastaccess' → {\"field\":\"suspended\",\"before\":\"lastaccess\"}. " +
   "'move full name to the far left' → {\"field\":\"fullname\",\"position\":\"start\"}.";
 
 export const reorderSchemaInput = z.object({
   field: z
     .string()
-    .describe("Field key to move, e.g. lastaccess, school, email, or suspended"),
+    .describe("Field key to move, e.g. lastaccess, department, email, or suspended"),
   position: z
     .enum(["start", "end"])
     .optional()
