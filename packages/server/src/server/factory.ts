@@ -12,7 +12,10 @@ import {
   buildToolDefinitions as buildCoreToolDefinitions,
   buildToolHandlers as buildCoreToolHandlers,
 } from "../tools/index.js";
-import type { LoadedPlugin } from "../plugins/contracts.js";
+import * as getCapabilities from "../tools/get-capabilities.js";
+import * as getAgentRuntimeConfig from "../tools/get-agent-runtime-config.js";
+import type { ToolCatalogEntry } from "../tools/get-capabilities.js";
+import type { AgentRegistration, LoadedPlugin } from "../plugins/contracts.js";
 
 /**
  * Type for a log function used by the factory.
@@ -82,10 +85,83 @@ function sanitizeArgsForTelemetry(args: unknown): unknown {
   return args;
 }
 
+const CORE_AGENT_REGISTRATION: AgentRegistration = {
+  promptRules: [
+    "Treat hierarchy words literally. \"Sub categories\", \"children\", \"under\", and \"inside\" mean child categories of a specific parent.",
+    "When the user asks for sub categories: if they provided a parent category name, call list_categories with parentname; if they provided a parent category ID, call list_categories with parentid; if the latest category tool result already resolved a parent, reuse that resolved parentid; otherwise ask one short clarification question.",
+    "Never fuzzy-match category names silently. Use exact category names or IDs. If a tool reports ambiguity, ask the user which category they mean or use the exact ID/path from the tool result.",
+    "When listing course-scoped users or assignments, specify the courseid.",
+  ],
+  continuationActions: [
+    {
+      tool: "list_user_courses",
+      keywords: ["course", "courses", "enrollment", "enrollments", "enrolled"],
+    },
+  ],
+};
+
+function mergeAgentRegistrations(
+  plugins: LoadedPlugin[],
+): getAgentRuntimeConfig.AgentRuntimeConfig {
+  const merged = getAgentRuntimeConfig.emptyAgentRuntimeConfig();
+
+  const append = (registration?: AgentRegistration) => {
+    if (!registration) return;
+    merged.promptRules.push(...(registration.promptRules ?? []));
+    merged.intentRoutes.push(...(registration.intentRoutes ?? []));
+    merged.toolRewrites.push(...(registration.toolRewrites ?? []));
+    merged.continuationActions.push(...(registration.continuationActions ?? []));
+  };
+
+  append(CORE_AGENT_REGISTRATION);
+
+  for (const plugin of plugins) {
+    if (!plugin.agent) continue;
+    append(plugin.agent);
+    merged.plugins.push({
+      id: plugin.manifest.id,
+      name: plugin.manifest.name,
+      version: plugin.manifest.version,
+    });
+  }
+
+  return merged;
+}
+
 export function createServer(opts: ServerFactoryOptions): ServerFactoryResult {
   // Build core definitions + handlers
   const toolDefinitions = buildCoreToolDefinitions();
   const toolHandlers = buildCoreToolHandlers(opts.moodleClient, opts.capabilities);
+  const agentRuntimeConfig = mergeAgentRegistrations(opts.extraPlugins ?? []);
+  const toolCatalog: ToolCatalogEntry[] = toolDefinitions.map((tool) => ({
+    name: tool.name,
+    description: tool.description ?? "",
+    source: "core",
+  }));
+
+  toolHandlers[getCapabilities.name] = getCapabilities.createHandler(() => toolCatalog);
+  toolDefinitions.push({
+    name: getCapabilities.name,
+    description: getCapabilities.description,
+    inputSchema: zodToJsonSchema(getCapabilities.inputSchema) as never,
+  });
+  toolCatalog.push({
+    name: getCapabilities.name,
+    description: getCapabilities.description,
+    source: "core",
+  });
+
+  toolHandlers[getAgentRuntimeConfig.name] = getAgentRuntimeConfig.createHandler(() => agentRuntimeConfig);
+  toolDefinitions.push({
+    name: getAgentRuntimeConfig.name,
+    description: getAgentRuntimeConfig.description,
+    inputSchema: zodToJsonSchema(getAgentRuntimeConfig.inputSchema) as never,
+  });
+  toolCatalog.push({
+    name: getAgentRuntimeConfig.name,
+    description: getAgentRuntimeConfig.description,
+    source: "core",
+  });
 
   // Register plugin tools (if any loaded)
   for (const plugin of opts.extraPlugins ?? []) {
@@ -105,12 +181,20 @@ export function createServer(opts: ServerFactoryOptions): ServerFactoryResult {
           serverName: opts.name,
           serverVersion: opts.version,
         },
-        license: plugin.license,
       });
       toolDefinitions.push({
         name: mod.name,
         description: mod.description,
         inputSchema: normalizeInputSchema(mod.inputSchema) as never,
+      });
+      toolCatalog.push({
+        name: mod.name,
+        description: mod.description,
+        source: "plugin",
+        plugin: {
+          id: plugin.manifest.id,
+          name: plugin.manifest.name,
+        },
       });
     }
   }
