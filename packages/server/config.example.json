@@ -8,10 +8,18 @@
     "version": "0.1.0",
     "id": "mcp_0p8sqp9v"
   },
+  "logging": {
+    "level": "info",
+    "toolCallLog": "./logs/tool-calls.jsonl"
+  },
   "plugins": {
     "searchPaths": [
-      { "path": "./dist/plugins/get-user-activity", "requiresLicense": true }
-    ],
-    "licenseKey": ""
+      {
+        "path": "./plugins-local"
+      },
+      {
+        "path": "./dist/plugins"
+      }
+    ]
   }
 }

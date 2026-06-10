@@ -31,12 +31,9 @@ export const ConfigSchema = z.object({
     toolCallLog: z.string().default("./logs/tool-calls.jsonl"),
   }),
   plugins: z.object({
-    /** Optional license key used to unlock premium plugins when an agent injects entitlements via config */
-    licenseKey: z.string().min(1).optional(),
     /** Search paths for plugin tool modules */
     searchPaths: z.array(z.object({
       path: z.string(),
-      requiresLicense: z.boolean().default(false),
     })).default([]),
   }).default({}),
 });

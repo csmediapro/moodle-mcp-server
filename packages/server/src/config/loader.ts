@@ -7,7 +7,7 @@ import {
   accessSync,
   constants,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 type MutableConfigObject = Record<string, unknown>;
 
@@ -96,7 +96,6 @@ function applyEnvOverrides(raw: unknown): unknown {
     SERVER_ID: ["server", "id"],
     SERVER_NAME: ["server", "name"],
     SERVER_VERSION: ["server", "version"],
-    PLUGINS_LICENSE_KEY: ["plugins", "licenseKey"],
   };
 
   for (const [envKey, path] of Object.entries(envMappings)) {
@@ -225,6 +224,20 @@ export function resolveConfigPath(): string {
     return resolve(configuredPath.trim());
   }
   return resolve(process.cwd(), "config.json");
+}
+
+export function resolvePluginSearchPaths(
+  searchPaths: Config["plugins"]["searchPaths"],
+  configPath = resolveConfigPath()
+): Config["plugins"]["searchPaths"] {
+  const configDir = dirname(configPath);
+
+  return searchPaths.map((searchPath) => ({
+    ...searchPath,
+    path: isAbsolute(searchPath.path)
+      ? searchPath.path
+      : resolve(configDir, searchPath.path),
+  }));
 }
 
 /**

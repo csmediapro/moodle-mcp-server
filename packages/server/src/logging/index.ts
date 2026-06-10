@@ -122,8 +122,6 @@ export type StatusEvent =
         | "export_missing"
         | "manifest_invalid"
         | "tools_invalid"
-        | "license_missing"
-        | "license_invalid"
         | "capability_missing"
         | "initialize_failed";
       message: string;
