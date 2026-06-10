@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ColumnDef,
   flexRender,
@@ -13,6 +13,8 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   RefreshCw,
   X,
@@ -287,12 +289,18 @@ function ResultTable({
   pagination,
   interactions,
   onAction,
+  onPage,
+  pageLoading,
+  pageError,
 }: {
   columns: ToolColumn[];
   rows: Array<Record<string, unknown>>;
   pagination?: ToolPagination;
   interactions?: ToolInteractions;
   onAction?: (message: string) => void;
+  onPage?: (offset: number) => void;
+  pageLoading?: boolean;
+  pageError?: string | null;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -328,6 +336,11 @@ function ResultTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
   });
+
+  const startRow = rows.length > 0 ? pagination ? pagination.offset + 1 : 1 : 0;
+  const endRow = pagination ? pagination.offset + rows.length : rows.length;
+  const canPagePrevious = !!pagination && pagination.offset > 0 && !pageLoading;
+  const canPageNext = !!pagination && !!pagination.hasMore && !pageLoading;
 
   return (
     <div>
@@ -411,15 +424,46 @@ function ResultTable({
       )}
 
       {pagination && (
-        <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
-          <span>
-            {rows.length > 0
-              ? `Showing ${pagination.offset + 1}–${pagination.offset + rows.length}`
-              : ""}
-            {!pagination.hasMore && pagination.total > 0 ? ` of ${pagination.total}` : ""}
-          </span>
-          {pagination.hasMore && (
-            <span className="font-medium text-slate-400">More available</span>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              Showing {startRow}–{endRow} of {pagination.total}
+            </span>
+            {pageLoading && (
+              <span className="font-medium text-blue-500">Loading page…</span>
+            )}
+            {pageError && (
+              <span className="font-medium text-rose-500">{pageError}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={!canPagePrevious}
+              onClick={() => onPage?.(Math.max(0, pagination.offset - pagination.limit))}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+              <span>Previous</span>
+            </button>
+            <button
+              type="button"
+              disabled={!canPageNext}
+              onClick={() => onPage?.(pagination.offset + pagination.limit)}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <span>Next</span>
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {pageError && (
+            <button
+              type="button"
+              onClick={() => onPage?.(pagination.offset)}
+              className="text-[11px] font-medium text-blue-500 hover:text-blue-600"
+            >
+              Retry
+            </button>
           )}
         </div>
       )}
@@ -472,9 +516,15 @@ function ResultList({ items }: { items: unknown[] }) {
 function ResultData({
   result,
   onAction,
+  onPage,
+  pageLoading,
+  pageError,
 }: {
   result: StructuredToolResult;
   onAction?: (message: string) => void;
+  onPage?: (offset: number) => void;
+  pageLoading?: boolean;
+  pageError?: string | null;
 }) {
   const { data } = result;
 
@@ -487,6 +537,9 @@ function ResultData({
           pagination={data.pagination}
           interactions={result.interactions?.mode === "row_actions" ? result.interactions : undefined}
           onAction={onAction}
+          onPage={onPage}
+          pageLoading={pageLoading}
+          pageError={pageError}
         />
       ) : null;
     case "record":
@@ -547,13 +600,81 @@ function ToolActions({
 export function ToolResultView({
   result,
   onAction,
+  toolName,
+  toolArgs,
 }: {
   result: StructuredToolResult;
   onAction?: (message: string) => void;
+  toolName?: string;
+  toolArgs?: unknown;
 }) {
-  const { context } = result;
+  const [currentResult, setCurrentResult] = useState(result);
+  const [pageLoading, setPageLoading] = useState(false);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const { context } = currentResult;
   const hasMetrics = context.metrics && Object.keys(context.metrics).length > 0;
   const hasWarnings = context.warnings && context.warnings.length > 0;
+  const hasPaginatedTable =
+    currentResult.data.kind === "table" &&
+    !!currentResult.data.pagination &&
+    !!currentResult.data.columns &&
+    !!currentResult.data.rows;
+  const showToolActions = !hasPaginatedTable;
+
+  useEffect(() => {
+    setCurrentResult(result);
+    setPageError(null);
+    setPageLoading(false);
+  }, [result]);
+
+  async function handlePage(offset: number) {
+    const pagination = currentResult.data.pagination;
+    const resolvedTool = currentResult.meta?.tool || toolName;
+    if (!pagination || !resolvedTool || pageLoading) return;
+
+    const baseArgs =
+      typeof toolArgs === "object" && toolArgs !== null && !Array.isArray(toolArgs)
+        ? { ...(toolArgs as Record<string, unknown>) }
+        : {};
+    const nextArgs: Record<string, unknown> = {
+      ...baseArgs,
+      offset,
+      limit: pagination.limit,
+    };
+
+    if (resolvedTool === "list_users") {
+      nextArgs.confirmed = true;
+      nextArgs.refresh = false;
+    }
+
+    setPageLoading(true);
+    setPageError(null);
+
+    try {
+      const response = await fetch("/api/tool-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tool: resolvedTool,
+          args: nextArgs,
+        }),
+      });
+
+      const payload = await response.json() as { ok?: boolean; result?: unknown; error?: string };
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `Tool action failed with ${response.status}`);
+      }
+      if (!isStructuredToolResult(payload.result)) {
+        throw new Error("Tool action returned an unstructured result.");
+      }
+
+      setCurrentResult(payload.result);
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPageLoading(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
@@ -573,15 +694,15 @@ export function ToolResultView({
       )}
 
       {/* Error display */}
-      {result.error && typeof result.error !== "string" && (
+      {currentResult.error && typeof currentResult.error !== "string" && (
         <div className="rounded-xl border border-rose-200/80 bg-rose-50/80 px-4 py-3 text-xs">
-          <p className="font-medium text-rose-700/80">{result.error.message}</p>
+          <p className="font-medium text-rose-700/80">{currentResult.error.message}</p>
           <p className="mt-1 text-[11px] text-rose-500/80">
-            {result.error.code} · {result.error.kind}
-            {!result.error.canRetry ? "" : " · retry possible"}
+            {currentResult.error.code} · {currentResult.error.kind}
+            {!currentResult.error.canRetry ? "" : " · retry possible"}
           </p>
-          {result.error.actionRequired && (
-            <p className="mt-2 text-rose-600/80">Action: {result.error.actionRequired}</p>
+          {currentResult.error.actionRequired && (
+            <p className="mt-2 text-rose-600/80">Action: {currentResult.error.actionRequired}</p>
           )}
         </div>
       )}
@@ -598,10 +719,18 @@ export function ToolResultView({
         </div>
       )}
 
-      <ToolActions interactions={result.interactions} onAction={onAction} />
+      {showToolActions && (
+        <ToolActions interactions={currentResult.interactions} onAction={onAction} />
+      )}
 
       {/* Data — the hero */}
-      <ResultData result={result} onAction={onAction} />
+      <ResultData
+        result={currentResult}
+        onAction={onAction}
+        onPage={handlePage}
+        pageLoading={pageLoading}
+        pageError={pageError}
+      />
     </div>
   );
 }

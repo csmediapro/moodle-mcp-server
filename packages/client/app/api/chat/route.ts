@@ -50,7 +50,17 @@ import { resolve } from "node:path";
 import { getClientConfig, getProvider } from "@/lib/llm/registry";
 import { logChatEval, logToolEval } from "@/lib/eval-logging";
 import { logCompositePattern } from "@/lib/composite-logging";
-import { initMCPClient, listTools, callTool } from "@/lib/mcp-client";
+import {
+  getAgentRuntimeConfig,
+  initMCPClient,
+  listTools,
+  callTool,
+  type AgentCapture,
+  type AgentCaptureTransform,
+  type AgentIntentRoute,
+  type AgentRuntimeConfig,
+  type AgentToolRewrite,
+} from "@/lib/mcp-client";
 import { formatToolResultForLLM } from "@/lib/tool-result";
 import type { Message, Tool, LLMProvider } from "@/lib/llm/types";
 
@@ -65,6 +75,38 @@ function isToolErrorResult(value: unknown): boolean {
     "ok" in value &&
     (value as { ok?: unknown }).ok === false
   );
+}
+
+function buildChatSafeToolErrorResult(opts: {
+  toolName: string;
+  message: string;
+  timedOut: boolean;
+}) {
+  return {
+    ok: false,
+    meta: {
+      tool: opts.toolName,
+      title: `${opts.toolName} Error`,
+      generatedAt: new Date().toISOString(),
+      resultCount: 0,
+    },
+    data: {
+      kind: "none",
+      title: "No data returned",
+    },
+    context: {
+      summary: opts.timedOut
+        ? "The tool call timed out before it returned data."
+        : "The tool call failed before it returned data.",
+      warnings: [opts.message],
+    },
+    error: {
+      code: opts.timedOut ? "TOOL_TIMEOUT" : "TOOL_CALL_ERROR",
+      message: opts.message,
+      kind: opts.timedOut ? "upstream" : "validation",
+      canRetry: true,
+    },
+  };
 }
 
 function isStructuredToolResult(value: unknown): value is {
@@ -145,22 +187,20 @@ function collectStructuredActions(result: unknown): StructuredAction[] {
   return actions;
 }
 
-function actionMatchesUserIntent(userMessage: string, action: StructuredAction): boolean {
+function actionMatchesUserIntent(
+  userMessage: string,
+  action: StructuredAction,
+  agentRuntimeConfig: AgentRuntimeConfig,
+): boolean {
   const prompt = normalizeIntentText(userMessage);
   const label = action.label ? normalizeIntentText(action.label) : "";
   const tool = normalizeIntentText(action.tool);
 
-  if (action.tool === "get_user_progress_report") {
-    return (
-      /\bprogress reports?\b/.test(prompt) ||
-      /\bcompletion reports?\b/.test(prompt) ||
-      /\b(progress|completion|grade|grades)\b/.test(prompt) ||
-      /\breports?\b/.test(prompt)
-    );
-  }
-
-  if (action.tool === "list_user_courses") {
-    return /\b(courses?|enrollments?|enrolled)\b/.test(prompt);
+  for (const rule of agentRuntimeConfig.continuationActions) {
+    if (action.tool !== rule.tool) continue;
+    if (rule.keywords.some((keyword) => prompt.includes(normalizeIntentText(keyword)))) {
+      return true;
+    }
   }
 
   if (label && prompt.includes(label)) {
@@ -178,12 +218,13 @@ function hasMatchingContinuationAction(opts: {
   userMessage: string;
   result: unknown;
   availableTools: Tool[];
+  agentRuntimeConfig: AgentRuntimeConfig;
 }): boolean {
   const availableToolNames = new Set(opts.availableTools.map((tool) => tool.name));
   return collectStructuredActions(opts.result).some((action) => (
     availableToolNames.has(action.tool) &&
     action.args !== undefined &&
-    actionMatchesUserIntent(opts.userMessage, action)
+    actionMatchesUserIntent(opts.userMessage, action, opts.agentRuntimeConfig)
   ));
 }
 
@@ -193,6 +234,43 @@ function wantsFullUserPresentation(userMessage: string): boolean {
     /\b(detailed?|details?|full|complete|expanded|all fields?|full profile|complete profile|raw)\b/.test(prompt) ||
     /\beverything\b/.test(prompt)
   );
+}
+
+function normalizeFilterKey(value: string): string {
+  const normalized = value
+    .toLocaleLowerCase()
+    .replace(/\bcustom\s+profile\s+field\b/g, "")
+    .replace(/\bprofile\s+field\b/g, "")
+    .replace(/\bfield\b/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "_")
+    .replace(/^_+|_+$/g, "");
+
+  const aliases: Record<string, string> = {
+    school_name: "school",
+    schoolname: "school",
+  };
+
+  return aliases[normalized] ?? normalized;
+}
+
+function cleanupFilterValue(value: string): string {
+  return value
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+(?:limit|offset)\s+\d+\s*$/i, "")
+    .replace(/\s+(?:please|thanks?)\s*$/i, "")
+    .trim();
+}
+
+function parseRequestedLimit(userMessage: string): number | undefined {
+  const firstMatch = userMessage.match(/\bfirst\s+(\d{1,4})\b/i);
+  const limitMatch = userMessage.match(/\blimit\s+(\d{1,4})\b/i);
+  const rawLimit = firstMatch?.[1] ?? limitMatch?.[1];
+  if (!rawLimit) return undefined;
+
+  const parsed = Number.parseInt(rawLimit, 10);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.min(Math.max(parsed, 1), 1000);
 }
 
 function normalizeToolArgsForRequest(opts: {
@@ -208,6 +286,266 @@ function normalizeToolArgsForRequest(opts: {
     ...opts.args,
     presentation: wantsFullUserPresentation(opts.userMessage) ? "full" : "compact",
   };
+}
+
+function compileAgentPattern(pattern: string, flags = "i"): RegExp | null {
+  try {
+    return new RegExp(pattern, flags);
+  } catch {
+    return null;
+  }
+}
+
+function matchesAgentExclusion(userMessage: string, exclude: string[] | undefined): boolean {
+  return (exclude ?? []).some((pattern) => {
+    const regex = compileAgentPattern(pattern, "i");
+    return regex ? regex.test(userMessage) : false;
+  });
+}
+
+function getCaptureValue(match: RegExpMatchArray, group: string | number): string | undefined {
+  if (typeof group === "number") {
+    return match[group];
+  }
+  return match.groups?.[group];
+}
+
+function transformCaptureValue(value: string, transform: AgentCaptureTransform | undefined): unknown {
+  switch (transform) {
+    case "filterKey":
+      return normalizeFilterKey(value);
+    case "filterValue":
+      return cleanupFilterValue(value);
+    case "number": {
+      const parsed = Number.parseInt(value, 10);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    default:
+      return value.trim();
+  }
+}
+
+function applyAgentCaptures(
+  args: Record<string, unknown>,
+  captures: AgentCapture[] | undefined,
+  match: RegExpMatchArray,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...args };
+
+  for (const capture of captures ?? []) {
+    if (capture.kind === "arg") {
+      const raw = getCaptureValue(match, capture.group);
+      if (raw === undefined) continue;
+      const value = transformCaptureValue(raw, capture.transform);
+      if (value !== undefined && value !== "") {
+        next[capture.name] = value;
+      }
+      continue;
+    }
+
+    const rawField = getCaptureValue(match, capture.fieldGroup);
+    const rawValue = getCaptureValue(match, capture.valueGroup);
+    if (rawField === undefined || rawValue === undefined) continue;
+
+    const field = transformCaptureValue(rawField, capture.fieldTransform);
+    const value = transformCaptureValue(rawValue, capture.valueTransform);
+    if (typeof field !== "string" || field.length === 0 || value === undefined || value === "") {
+      continue;
+    }
+
+    const existingValue = next[capture.target];
+    const existing: Record<string, unknown> = isRecord(existingValue)
+      ? existingValue
+      : {};
+    next[capture.target] = {
+      ...existing,
+      [field]: value,
+    };
+  }
+
+  return next;
+}
+
+function resolveAgentRoute(
+  userMessage: string,
+  routes: AgentIntentRoute[],
+  availableTools: Tool[],
+): { tool: string; args: Record<string, unknown> } | null {
+  const availableToolNames = new Set(availableTools.map((tool) => tool.name));
+
+  for (const route of routes) {
+    if (!availableToolNames.has(route.tool)) continue;
+    if (matchesAgentExclusion(userMessage, route.exclude)) continue;
+
+    const regex = compileAgentPattern(route.match, route.flags ?? "i");
+    const match = regex ? userMessage.match(regex) : null;
+    if (!match) continue;
+
+    const args = applyAgentCaptures(
+      { ...(route.args ?? {}) },
+      route.captures,
+      match,
+    );
+
+    return {
+      tool: route.tool,
+      args: {
+        ...args,
+        ...(parseRequestedLimit(userMessage) ? { limit: parseRequestedLimit(userMessage) } : {}),
+      },
+    };
+  }
+
+  return null;
+}
+
+function resolveAgentRewrite(
+  userMessage: string,
+  toolName: string,
+  rewrites: AgentToolRewrite[],
+  availableTools: Tool[],
+): { tool: string; args: Record<string, unknown> } | null {
+  const matchingRules = rewrites
+    .filter((rewrite) => rewrite.whenTool === toolName)
+    .map((rewrite) => ({
+      id: rewrite.id,
+      description: rewrite.description,
+      match: rewrite.match,
+      flags: rewrite.flags,
+      tool: rewrite.tool,
+      args: rewrite.args,
+      captures: rewrite.captures,
+      exclude: rewrite.exclude,
+    }));
+
+  return resolveAgentRoute(userMessage, matchingRules, availableTools);
+}
+
+function normalizeToolCallForRequest(opts: {
+  toolCall: {
+    id: string;
+    name: string;
+    args: unknown;
+  };
+  userMessage: string;
+  availableTools: Tool[];
+  agentRuntimeConfig: AgentRuntimeConfig;
+}): {
+  id: string;
+  name: string;
+  args: unknown;
+} {
+  const rewrite = resolveAgentRewrite(
+    opts.userMessage,
+    opts.toolCall.name,
+    opts.agentRuntimeConfig.toolRewrites,
+    opts.availableTools,
+  );
+
+  if (rewrite) {
+    return {
+      ...opts.toolCall,
+      name: rewrite.tool,
+      args: rewrite.args,
+    };
+  }
+
+  const route = resolveAgentRoute(
+    opts.userMessage,
+    opts.agentRuntimeConfig.intentRoutes,
+    opts.availableTools,
+  );
+
+  if (route && route.tool === opts.toolCall.name && isRecord(opts.toolCall.args)) {
+    const currentFilters = isRecord(opts.toolCall.args.filters) ? opts.toolCall.args.filters : {};
+    const routeFilters = isRecord(route.args.filters) ? route.args.filters : {};
+    return {
+      ...opts.toolCall,
+      args: {
+        ...route.args,
+        ...opts.toolCall.args,
+        filters: {
+          ...routeFilters,
+          ...currentFilters,
+        },
+      },
+    };
+  }
+
+  return {
+    ...opts.toolCall,
+    args: normalizeToolArgsForRequest({
+      toolName: opts.toolCall.name,
+      args: opts.toolCall.args,
+      userMessage: opts.userMessage,
+    }),
+  };
+}
+
+function quoteJsonishBareValues(value: string): string {
+  return value.replace(/(:\s*)([A-Za-z_][\w .-]*)(\s*[,}])/g, (_match, prefix, raw, suffix) => {
+    const trimmed = String(raw).trim();
+    if (/^(true|false|null)$/i.test(trimmed) || /^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+      return `${prefix}${trimmed}${suffix}`;
+    }
+    return `${prefix}${JSON.stringify(trimmed)}${suffix}`;
+  });
+}
+
+function parseJsonishArgs(rawArgs: string): unknown | null {
+  const normalized = quoteJsonishBareValues(
+    rawArgs.replace(/([{,]\s*)([A-Za-z_][\w-]*)(\s*:)/g, "$1\"$2\"$3"),
+  );
+
+  try {
+    return JSON.parse(normalized);
+  } catch {
+    return null;
+  }
+}
+
+function parseLeakedToolCallText(
+  text: string,
+  availableTools: Tool[],
+): { id: string; name: string; args: unknown } | null {
+  const trimmed = text.trim();
+  if (!trimmed.includes("call:")) {
+    return null;
+  }
+
+  const callMatch = trimmed.match(/call:([A-Za-z0-9_]+)/);
+  if (!callMatch) {
+    return null;
+  }
+
+  const name = callMatch[1];
+  if (!availableTools.some((tool) => tool.name === name)) {
+    return null;
+  }
+
+  const argsStart = trimmed.indexOf("{", callMatch.index);
+  const argsEnd = trimmed.lastIndexOf("}");
+  if (argsStart === -1 || argsEnd <= argsStart) {
+    return null;
+  }
+
+  const args = parseJsonishArgs(trimmed.slice(argsStart, argsEnd + 1));
+  if (!args || typeof args !== "object") {
+    return null;
+  }
+
+  return {
+    id: `recovered_${Date.now().toString(36)}`,
+    name,
+    args,
+  };
+}
+
+function looksLikeLeakedToolCallPrefix(text: string): boolean {
+  const trimmed = text.trimStart();
+  if (!trimmed) return true;
+  const marker = "<|tool_call|>";
+  return marker.startsWith(trimmed) || trimmed.startsWith(marker) || trimmed.startsWith("call:");
 }
 
 type ProviderTurnResult = {
@@ -251,6 +589,8 @@ async function runProviderTurn(opts: {
   let errorMessage: string | null = null;
   let textStarted = false;
   let toolCallStarted = false;
+  let textReleased = false;
+  let pendingText = "";
 
   const events = opts.provider.generate({
     messages: opts.messages,
@@ -264,7 +604,16 @@ async function runProviderTurn(opts: {
         textStarted = true;
         assistantText += event.text;
         opts.onTextDelta?.();
-        opts.send({ type: "text_delta", text: event.text });
+        if (textReleased) {
+          opts.send({ type: "text_delta", text: event.text });
+        } else {
+          pendingText += event.text;
+          if (!looksLikeLeakedToolCallPrefix(pendingText)) {
+            textReleased = true;
+            opts.send({ type: "text_delta", text: pendingText });
+            pendingText = "";
+          }
+        }
         break;
 
       case "tool_call":
@@ -302,6 +651,10 @@ async function runProviderTurn(opts: {
     }
   }
 
+  if (!textReleased && pendingText && !parseLeakedToolCallText(pendingText, opts.tools)) {
+    opts.send({ type: "text_delta", text: pendingText });
+  }
+
   return {
     assistantText,
     toolCalls,
@@ -317,6 +670,7 @@ async function runProviderTurn(opts: {
 function shouldFinalizeAfterToolResult(opts: {
   userMessage: string;
   availableTools: Tool[];
+  agentRuntimeConfig: AgentRuntimeConfig;
   toolCallsFromThisTurn: Array<{ id: string; name: string; args: unknown }>;
   toolResults: unknown[];
 }): boolean {
@@ -338,6 +692,7 @@ function shouldFinalizeAfterToolResult(opts: {
     userMessage: opts.userMessage,
     result,
     availableTools: opts.availableTools,
+    agentRuntimeConfig: opts.agentRuntimeConfig,
   })) {
     return false;
   }
@@ -472,13 +827,14 @@ export async function POST(request: NextRequest) {
 
         // Initialize MCP server connection
         await ensureMCPReady();
-        tools = listTools();
+        tools = listTools().filter((tool) => tool.name !== "get_agent_runtime_config");
+        const agentRuntimeConfig = getAgentRuntimeConfig();
 
         // Get the active provider (or the requested one)
         const provider = getProvider(providerKey, model);
 
         // Build conversation history
-        const systemPrompt = buildSystemPrompt(tools, provider.name);
+        const systemPrompt = buildSystemPrompt(tools, provider.name, agentRuntimeConfig);
         const historyMsgs = (body.history || []).filter((m) => m.role !== "system") as unknown as Message[];
         
         // Avoid duplicate user message — the browser may include the current
@@ -520,26 +876,54 @@ export async function POST(request: NextRequest) {
               }
             },
             normalizeToolCall: (toolCall) => ({
-              ...toolCall,
-              args: normalizeToolArgsForRequest({
-                toolName: toolCall.name,
-                args: toolCall.args,
+              ...normalizeToolCallForRequest({
+                toolCall,
                 userMessage,
+                availableTools: tools,
+                agentRuntimeConfig,
               }),
             }),
           });
 
-          const toolCallsThisTurn = turn.toolCalls.map((tc) => ({
-            ...tc,
-            args: normalizeToolArgsForRequest({
-              toolName: tc.name,
-              args: tc.args,
+          const recoveredToolCall =
+            turn.toolCalls.length === 0 && turn.stopReason !== "error"
+              ? parseLeakedToolCallText(turn.assistantText, tools)
+              : null;
+          const normalizedRecoveredToolCall = recoveredToolCall
+            ? normalizeToolCallForRequest({
+                toolCall: recoveredToolCall,
+                userMessage,
+                availableTools: tools,
+                agentRuntimeConfig,
+              })
+            : null;
+          const providerToolCalls =
+            normalizedRecoveredToolCall ? [normalizedRecoveredToolCall] : turn.toolCalls;
+          const assistantTextForHistory = recoveredToolCall ? "" : turn.assistantText;
+
+          if (normalizedRecoveredToolCall) {
+            if (timeToFirstToolCallMs === null) {
+              timeToFirstToolCallMs = Date.now() - requestStart;
+            }
+            send({
+              type: "tool_call",
+              id: normalizedRecoveredToolCall.id,
+              name: normalizedRecoveredToolCall.name,
+              args: normalizedRecoveredToolCall.args,
+            });
+          }
+
+          const toolCallsThisTurn = providerToolCalls.map((tc) => ({
+            ...normalizeToolCallForRequest({
+              toolCall: tc,
               userMessage,
+              availableTools: tools,
+              agentRuntimeConfig,
             }),
           }));
 
           toolCallsAttempted += toolCallsThisTurn.length;
-          fullAssistantText += turn.assistantText;
+          fullAssistantText += assistantTextForHistory;
           finalStopReason = turn.stopReason;
           completed = true;
           if (turn.usage) {
@@ -559,7 +943,7 @@ export async function POST(request: NextRequest) {
           // Add the assistant message with tool calls to history
           currentMessages.push({
             role: "assistant",
-            content: turn.assistantText || null as unknown as string,
+            content: assistantTextForHistory || null as unknown as string,
             toolCalls: toolCallsThisTurn.map((tc) => ({
               id: tc.id,
               name: tc.name,
@@ -656,18 +1040,24 @@ export async function POST(request: NextRequest) {
                 resultSizeChars: 0,
               });
 
+              const safeErrorResult = buildChatSafeToolErrorResult({
+                toolName: tc.name,
+                message: errMsg,
+                timedOut,
+              });
+
               send({
                 type: "tool_result",
                 id: tc.id,
-                result: { error: errMsg },
+                result: safeErrorResult,
               });
-              toolResultsThisTurn.push({ error: errMsg });
+              toolResultsThisTurn.push(safeErrorResult);
               currentMessages.push({
                 role: "tool",
-                content: JSON.stringify({ error: errMsg }),
+                content: JSON.stringify(safeErrorResult),
                 toolResult: {
                   id: tc.id,
-                  result: JSON.stringify({ error: errMsg }),
+                  result: JSON.stringify(safeErrorResult),
                 },
               });
             }
@@ -690,6 +1080,7 @@ export async function POST(request: NextRequest) {
           if (shouldFinalizeAfterToolResult({
             userMessage,
             availableTools: tools,
+            agentRuntimeConfig,
             toolCallsFromThisTurn: toolCallsThisTurn,
             toolResults: toolResultsThisTurn,
           })) {
@@ -798,13 +1189,21 @@ export async function POST(request: NextRequest) {
  * Build a system prompt that tells the LLM about the available tools
  * and gives it guidelines for using them effectively.
  */
-function buildSystemPrompt(tools: Tool[], providerName: string): string {
+function buildSystemPrompt(
+  tools: Tool[],
+  providerName: string,
+  agentRuntimeConfig: AgentRuntimeConfig,
+): string {
   const toolList = tools
     .map(
       (t) =>
         `- **${t.name}**: ${t.description}`
     )
     .join("\n");
+
+  const agentRules = agentRuntimeConfig.promptRules.length > 0
+    ? `\nREGISTERED TOOL RULES:\n${agentRuntimeConfig.promptRules.map((rule) => `- ${rule}`).join("\n")}\n`
+    : "";
 
   return `You are a concise Moodle data analyst. You help users explore their courses, users, assignments, completion data, and recent activity.
 
@@ -817,13 +1216,7 @@ CORE RULES (follow these strictly):
 - NEVER invent, fabricate, or guess data. If you don't have specific item names or IDs in your tool context, do NOT list or enumerate individual items. The UI already renders the full result; your job is interpretation, not itemization.
 - If the user asks for a list of things (courses, users, etc.) and your tool context only gives you summary metrics without individual names/IDs, respond with the metrics and refer the user to the rendered table in the UI.
 - Respond in English unless the user asks for another language.
-- Treat hierarchy words literally. "Sub categories", "children", "under", and "inside" mean child categories of a specific parent.
-- When the user asks for sub categories:
-  - If they provided a parent category name, call list_categories with parentname.
-  - If they provided a parent category ID, call list_categories with parentid.
-  - If the latest category tool result already resolved a parent, reuse that resolved parentid.
-  - If no parent is named and no parent is resolved in the current conversation, ask one short clarification question instead of guessing.
-- Never fuzzy-match category names silently. Use exact category names or IDs. If a tool reports ambiguity, ask the user which category they mean or use the exact ID/path from the tool result.
+${agentRules}
 
 BEHAVIOR AFTER A TOOL CALL:
 - One short takeaway sentence.
@@ -838,7 +1231,7 @@ TOOL USAGE:
 - Prefer narrow calls over broad ones. Use limit/offset for list requests.
 - For "first N" requests: pass limit=N, offset=0.
 - Only request all results when the user explicitly asks for all.
-- When listing users or assignments, always specify the courseid.
+- Never write tool-call markup such as <|tool_call|> or call:tool_name{...} in assistant text. Use the provider's structured tool call mechanism only.
 - If a tool returns an error, explain it and suggest alternatives. Do NOT auto-call fallback tools unless the user explicitly asked for that.
 
 TONE:

@@ -847,7 +847,12 @@ function ToolResultHero({
       </div>
 
       {/* Data block */}
-      <ToolResultView result={structuredResult} onAction={onToolAction} />
+      <ToolResultView
+        result={structuredResult}
+        onAction={onToolAction}
+        toolName={toolCall.name}
+        toolArgs={toolCall.args}
+      />
     </div>
   );
 }
