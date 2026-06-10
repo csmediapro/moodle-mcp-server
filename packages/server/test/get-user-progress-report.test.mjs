@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHandler } from "../dist/tools/get-user-progress-report.js";
-import { MoodleClient } from "../dist/moodle/client.js";
+import { plugin } from "../dist/plugins/get-user-progress-report/index.js";
 
 // Mock client that returns predefined responses
 class MockMoodleClient {
@@ -75,6 +74,24 @@ function baseCapabilities() {
     probedAt: new Date("2026-01-01T00:00:00.000Z")
   };
 }
+
+function createHandler(client, caps = baseCapabilities()) {
+  return plugin.tools[0].createHandler({
+    moodleClient: client,
+    capabilities: caps,
+    log: () => {},
+    config: {
+      serverName: "Test Server",
+      serverVersion: "0.1.0",
+    },
+  });
+}
+
+test("get_user_progress_report is exported as a plugin tool", () => {
+  assert.equal(plugin.manifest.id, "get-user-progress-report");
+  assert.deepEqual(plugin.manifest.tools, ["get_user_progress_report"]);
+  assert.equal(plugin.tools[0].name, "get_user_progress_report");
+});
 
 test("get_user_progress_report returns correct structure", async () => {
   const client = new MockMoodleClient();
