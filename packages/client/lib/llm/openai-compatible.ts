@@ -34,13 +34,14 @@ interface OpenAICompatibleConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  displayName?: string;
 }
 
 export function createOpenAICompatibleProvider(
   config: OpenAICompatibleConfig
 ): LLMProvider {
   return {
-    name: `OpenAI Compat (${config.model})`,
+    name: `${config.displayName || "OpenAI Compat"} (${config.model})`,
     async *generate({
       messages,
       tools,

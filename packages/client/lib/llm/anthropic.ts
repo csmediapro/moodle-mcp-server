@@ -25,11 +25,12 @@ interface AnthropicConfig {
   baseUrl: string;
   model: string;
   apiKey: string;
+  displayName?: string;
 }
 
 export function createAnthropicProvider(config: AnthropicConfig): LLMProvider {
   return {
-    name: `Anthropic (${config.model})`,
+    name: `${config.displayName || "Anthropic"} (${config.model})`,
     async *generate({ messages, tools, signal }): AsyncIterable<LLMEvent> {
       const url = `${config.baseUrl.replace(/\/$/, "")}/v1/messages`;
 

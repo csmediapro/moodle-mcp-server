@@ -90,6 +90,7 @@ function createProvider(
         baseUrl: cfg.baseUrl,
         model,
         apiKey,
+        displayName: cfg.label,
       });
 
     case "openai-compatible":
@@ -97,6 +98,7 @@ function createProvider(
         baseUrl: cfg.baseUrl,
         model,
         apiKey,
+        displayName: cfg.label,
       });
 
     default:
