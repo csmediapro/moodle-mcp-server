@@ -1,8 +1,8 @@
-# Moodle Report — AI-Powered LMS Analytics
+# moodle-mcp-server — AI-Powered LMS Analytics
 
 > **Ask your Moodle instance anything. Get structured answers in seconds.**
 
-Moodle Report is the customer-facing brand for an open-source MCP (Model Context Protocol) server that connects AI agents directly to Moodle's Web Services API. The technical platform and OSS package are named `moodle-mcp-server`.
+`moodle-mcp-server` is an open-source MCP (Model Context Protocol) server that connects AI agents directly to Moodle's Web Services API. It is the Moodle connector behind CSMediaPro's broader Agentic Query Layer (AQL) work.
 
 Instead of learning report builders, writing SQL, or exporting CSVs, you ask questions in plain English — the AI agent queries your LMS and returns structured data.
 
@@ -99,7 +99,7 @@ The client will auto-detect your Moodle instance and present a chat interface wh
 
 ## Connecting an LLM
 
-Moodle Report needs an AI model to power the natural-language interface. You bring the model — the `moodle-mcp-server` core and reference client support any MCP-compatible provider.
+`moodle-mcp-server` needs an AI model to power the natural-language interface. You bring the model — the `moodle-mcp-server` core and reference client support any MCP-compatible provider.
 
 ### Option 1: Run Locally (Recommended for Speed & Privacy)
 
@@ -188,7 +188,6 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 | `get_course` | Detail view for any course |
 | `list_course_users` | Enrolled users with roles and access data (now supports course name search with interactive selection) |
 | `list_assignments` | All assignments with due dates |
-| `get_recent_activity` | Activity feed for any course |
 | `list_categories` | Full hierarchy with exact parent resolution |
 | `get_site_info` | Instance overview — site name, version, course count |
 | `get_user` | Detail view for a Moodle user |
@@ -257,6 +256,6 @@ You cannot:
 
 ## Built by CSMediaPro
 
-Moodle Report is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation.
+`moodle-mcp-server` is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation.
 
 - **Contact:** contact@csmediapro.com

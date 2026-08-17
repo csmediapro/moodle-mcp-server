@@ -44,7 +44,7 @@ The supervisor should treat this as an additive contract:
 Example:
 
 ```json
-{"ts":"2026-05-26T22:00:00.000Z","stream":"status","type":"identity_ready","serverId":"mcp_8f3k2q9x","serverName":"ProTrain Prod","serverVersion":"0.1.0"}
+{"ts":"2026-05-26T22:00:00.000Z","stream":"status","type":"identity_ready","serverId":"mcp_8f3k2q9x","serverName":"Moodle Production","serverVersion":"0.1.0"}
 ```
 
 ## Lifecycle Event Contract

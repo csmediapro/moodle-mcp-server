@@ -128,7 +128,7 @@ export async function initMCPClient(mcpConfig: {
     command: mcpConfig.serverCommand,
     args: mcpConfig.serverArgs,
     ...(mcpConfig.serverCwd
-      ? { cwd: resolve(process.cwd(), mcpConfig.serverCwd) }
+      ? { cwd: resolve(/* turbopackIgnore: true */ process.cwd(), mcpConfig.serverCwd) }
       : {}),
   });
 

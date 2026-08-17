@@ -29,7 +29,7 @@
       "local-llamacpp": {
         "type": "openai-compatible",
         "label": "llama.cpp (local)",
-        "baseUrl": "http://172.24.48.1:8080/v1",
+        "baseUrl": "http://localhost:8080/v1",
         "defaultModel": "auto",
         "enabled": true
       }

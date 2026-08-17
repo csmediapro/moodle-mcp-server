@@ -1,7 +1,7 @@
 {
   "name": "moodle-mcp-server-workspace",
   "version": "0.1.0",
-  "description": "Workspace for the moodle-mcp-server platform and the Moodle Report reference client",
+  "description": "Workspace for the moodle-mcp-server core and reference client",
   "private": true,
   "license": "AGPL-3.0",
   "workspaces": [

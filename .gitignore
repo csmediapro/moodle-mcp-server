@@ -11,3 +11,4 @@ packages/server/data/user-field-schema.json
 .DS_Store
 TODO.md
 packages/server/config.json
+packages/client/config.json

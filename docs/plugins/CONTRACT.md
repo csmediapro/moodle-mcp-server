@@ -224,7 +224,7 @@ startup. Removing a plugin removes its tools and its agent behavior together.
 
 ## Tool Result Shape
 
-Plugin tools may return any MCP-compatible payload, but Moodle Report understands the structured `ToolResponse` contract exported from `packages/server/src/plugins/contracts.ts`. Use this shape when a result should render as a table, card, list, error, or deterministic follow-up action.
+Plugin tools may return any MCP-compatible payload, but the reference client understands the structured `ToolResponse` contract exported from `packages/server/src/plugins/contracts.ts`. Use this shape when a result should render as a table, card, list, error, or deterministic follow-up action.
 
 ```ts
 export interface ToolResponse {

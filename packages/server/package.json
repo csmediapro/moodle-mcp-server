@@ -1,22 +1,39 @@
 {
   "name": "@csmediapro/moodle-mcp-server",
   "version": "0.1.0",
-  "description": "moodle-mcp-server — MCP server for Moodle LMS Reports and Analytics",
+  "description": "Open-source MCP server for querying Moodle LMS data through Moodle Web Services",
   "license": "AGPL-3.0",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "moodle-mcp-server": "dist/index.js",
-    "moodlereport": "dist/index.js"
+    "moodle-mcp-server": "dist/index.js"
   },
+  "files": [
+    "dist/index.*",
+    "dist/auth/**/*",
+    "dist/config/**/*",
+    "dist/logging/**/*",
+    "dist/moodle/**/*",
+    "dist/plugins/contracts.*",
+    "dist/plugins/loader.*",
+    "dist/schema/**/*",
+    "dist/server/**/*",
+    "dist/tools/**/*",
+    "dist/utils/**/*",
+    "data/user-field-schema.example.json",
+    "config.example.json",
+    ".env.example",
+    "README.md"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "npm run clean && tsc",
     "dev": "tsc --watch",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",

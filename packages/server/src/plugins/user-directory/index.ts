@@ -573,7 +573,7 @@ export const plugin: MCPServerPlugin = {
 
   agent: {
     promptRules: [
-      "For site-wide user directory requests with field/value filters, call list_users directly. Example: \"list users with school = protrain\" -> list_users({ filters: { school: \"protrain\" }, limit: 100, offset: 0 }). Do not call get_user_field_schema first unless the user explicitly asks to inspect or configure the schema.",
+      "For site-wide user directory requests with field/value filters, call list_users directly. Example: \"list users with school = example\" -> list_users({ filters: { school: \"example\" }, limit: 100, offset: 0 }). Do not call get_user_field_schema first unless the user explicitly asks to inspect or configure the schema.",
       "For user-directory requests asking for users with no, missing, blank, empty, or null values in a field, call list_users with emptyFields. Example: \"list users with no school\" -> list_users({ emptyFields: [\"school\"], limit: 100, offset: 0 }).",
       "For cached user-directory grouping requests such as \"show unique schools\", \"show all unique schools from the user cache\", or \"count users by school\", call summarize_user_directory_field. Use the exact tool name summarize_user_directory_field, never summary_user_directory_field.",
       "For summarize_user_directory_field, use exact canonical sort values: count_desc for most users first, count_asc for fewest users first, value_asc for alphabetical A-Z, and value_desc for reverse alphabetical. Example: summarize_user_directory_field({ field: \"school\", limit: 100, offset: 0, sort: \"value_asc\" }).",
@@ -647,7 +647,7 @@ export const plugin: MCPServerPlugin = {
       },
       {
         id: "user-directory-users-from-field-value",
-        description: "Route prompts like 'users from school protrain'.",
+        description: "Route prompts like 'users from school example'.",
         match: "\\busers?\\b.*?\\bfrom\\s+(?:the\\s+)?([A-Za-z][\\w -]{0,50}?)\\s+[\"']?([^\"',.;?\\n]+)[\"']?",
         flags: "i",
         tool: "list_users",
@@ -694,7 +694,7 @@ export const plugin: MCPServerPlugin = {
       name: "list_users",
       description:
         "List Moodle users using structured filters and a local cache. " +
-        "Use this directly for site-wide user directory requests such as 'list users where school = protrain', field equals value filters, pagination, and reporting-friendly user lists. " +
+        "Use this directly for site-wide user directory requests such as 'list users where school = example', field equals value filters, pagination, and reporting-friendly user lists. " +
         "Use emptyFields for requests like 'list users with no school', 'users missing school', or 'school is blank'. " +
         "Do not call get_user_field_schema before this tool for ordinary filtered user lists; pass the user's requested field/value in filters. " +
         "When a valid full-directory cache exists, filters are applied in memory against cached normalized users. " +
