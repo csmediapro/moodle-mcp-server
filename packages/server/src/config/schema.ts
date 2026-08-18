@@ -29,7 +29,7 @@ export const ConfigSchema = z.object({
       .default("info"),
     /** Path to JSONL tool-call log file (relative to CWD) */
     toolCallLog: z.string().default("./logs/tool-calls.jsonl"),
-  }),
+  }).default({}),
   plugins: z.object({
     /** Search paths for plugin tool modules */
     searchPaths: z.array(z.object({
