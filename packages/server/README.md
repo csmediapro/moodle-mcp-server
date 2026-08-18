@@ -1,6 +1,6 @@
-# @csmediapro/moodle-mcp-server
+# moodle-mcp-server-aql
 
-Open-source MCP server for querying Moodle LMS data through Moodle Web Services.
+Open-source MCP server for querying Moodle LMS data through natural language. Attach your agent to your LMS data.
 
 This package provides the stdio MCP server from the `moodle-mcp-server` repository.
 
@@ -15,7 +15,7 @@ Most users launch the server through an MCP client such as Claude Desktop:
   "mcpServers": {
     "moodle-mcp-server": {
       "command": "npx",
-      "args": ["-y", "@csmediapro/moodle-mcp-server"],
+      "args": ["-y", "moodle-mcp-server-aql"],
       "env": {
         "MOODLE_URL": "https://your-moodle-instance.example",
         "MOODLE_TOKEN": "your-moodle-web-services-token"
@@ -28,7 +28,7 @@ Most users launch the server through an MCP client such as Claude Desktop:
 ## Install Globally
 
 ```bash
-npm install -g @csmediapro/moodle-mcp-server
+npm install -g moodle-mcp-server-aql
 ```
 
 Then run:

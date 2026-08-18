@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.csmediapro/moodle-mcp-server-aql",
+  "description": "Query Moodle LMS data through natural language. Attach your agent to your LMS data.",
+  "repository": {
+    "url": "https://github.com/csmediapro/moodle-mcp-server",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "moodle-mcp-server-aql",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MOODLE_URL",
+          "description": "Base URL for the Moodle instance to query.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false
+        },
+        {
+          "name": "MOODLE_TOKEN",
+          "description": "Moodle Web Services API token.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
