@@ -99,6 +99,12 @@ export type StatusEvent =
       capabilityCount: number;
     }
   | {
+      type: "moodle_probe_failed";
+      code: "moodle_unreachable" | "capability_probe_failed";
+      stage: "moodle_probe";
+      message: string;
+    }
+  | {
       type: "cache_warm_ok";
     }
   | {

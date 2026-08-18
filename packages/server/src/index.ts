@@ -99,19 +99,29 @@ async function main(): Promise<void> {
   let capabilities;
   try {
     capabilities = await probeCapabilities(moodleClient);
-  } catch (err) {
     emitStatus({
-      type: "fatal",
-      code: classifyProbeFailure(err),
+      type: "moodle_probe_ok",
+      capabilityCount: capabilities.functions.size,
+    });
+  } catch (err) {
+    const code = classifyProbeFailure(err);
+    log("warn", `Moodle capability probe failed (${code}): ${err instanceof Error ? err.message : String(err)}`);
+    log("warn", "Starting in degraded mode — tools will return errors on Moodle API calls until a valid connection is available.");
+    emitStatus({
+      type: "moodle_probe_failed",
+      code,
       stage: "moodle_probe",
       message: err instanceof Error ? err.message : String(err),
     });
-    throw err;
+    // Use empty capabilities so core tools still register for introspection
+    capabilities = {
+      functions: new Map(),
+      siteName: null,
+      siteVersion: null,
+      siteRelease: null,
+      username: null,
+    } as any;
   }
-  emitStatus({
-    type: "moodle_probe_ok",
-    capabilityCount: capabilities.functions.size,
-  });
 
   // Persist resolved site name to config.json for the client's static layout
   if (capabilities.siteName && capabilities.siteName !== config.server.name) {
