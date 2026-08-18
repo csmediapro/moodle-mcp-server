@@ -1,11 +1,33 @@
 {
   "name": "@csmediapro/moodle-mcp-server",
   "version": "0.1.0",
+  "mcpName": "io.github.csmediapro/moodle-mcp-server",
   "description": "Open-source MCP server for querying Moodle LMS data through Moodle Web Services",
   "license": "AGPL-3.0",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
+  "homepage": "https://csmediapro.com/products/moodle-mcp-server",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csmediapro/moodle-mcp-server.git",
+    "directory": "packages/server"
+  },
+  "bugs": {
+    "url": "https://github.com/csmediapro/moodle-mcp-server/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "moodle",
+    "lms",
+    "education",
+    "ai",
+    "agents"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "bin": {
     "moodle-mcp-server": "dist/index.js"
   },

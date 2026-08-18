@@ -6,6 +6,37 @@ This package provides the stdio MCP server from the `moodle-mcp-server` reposito
 
 Project page: https://csmediapro.com/products/moodle-mcp-server
 
+## Use With An MCP Client
+
+Most users launch the server through an MCP client such as Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "moodle-mcp-server": {
+      "command": "npx",
+      "args": ["-y", "@csmediapro/moodle-mcp-server"],
+      "env": {
+        "MOODLE_URL": "https://your-moodle-instance.example",
+        "MOODLE_TOKEN": "your-moodle-web-services-token"
+      }
+    }
+  }
+}
+```
+
+## Install Globally
+
+```bash
+npm install -g @csmediapro/moodle-mcp-server
+```
+
+Then run:
+
+```bash
+moodle-mcp-server
+```
+
 ## Install From Source
 
 ```bash
@@ -29,15 +60,13 @@ MOODLE_URL=https://your-moodle-instance.example
 MOODLE_TOKEN=your-moodle-web-services-token
 ```
 
-## Run
+## Run From Source
 
 ```bash
 node packages/server/dist/index.js
 ```
 
-Most users launch the server through an MCP client such as Claude Desktop.
-
-## Claude Desktop Example
+## Claude Desktop From Source
 
 ```json
 {
