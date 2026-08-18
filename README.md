@@ -7,6 +7,8 @@
 Instead of learning report builders, writing SQL, or exporting CSVs, you ask questions in plain English — the AI agent queries your LMS and returns structured data.
 
 **Project home:** https://csmediapro.com/products/moodle-mcp-server
+**npm package:** https://www.npmjs.com/package/moodle-mcp-server-aql
+**MCP Registry:** `io.github.csmediapro/moodle-mcp-server-aql`
 
 ---
 
@@ -30,7 +32,26 @@ Instead of learning report builders, writing SQL, or exporting CSVs, you ask que
 - A Moodle instance with Web Services enabled
 - A Moodle API token (Site administration → Plugins → Web services → Manage tokens)
 
-### Setup
+### Use With An MCP Client
+
+Most users launch the server through an MCP client such as Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "moodle-mcp-server-aql": {
+      "command": "npx",
+      "args": ["-y", "moodle-mcp-server-aql"],
+      "env": {
+        "MOODLE_URL": "https://your-moodle-instance.example",
+        "MOODLE_TOKEN": "your-moodle-web-services-token"
+      }
+    }
+  }
+}
+```
+
+### Setup From Source
 
 ```bash
 # Clone the repo
