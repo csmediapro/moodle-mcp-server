@@ -252,6 +252,10 @@ You cannot:
 - ❌ Repackage the `moodle-mcp-server` core as a closed-source competing commercial product
 - ❌ Offer it as a network service without sharing your modifications
 
+## Trademark Notice
+
+Moodle is a trademark of Moodle Pty Ltd. `moodle-mcp-server` is an independent CSMediaPro project and is not affiliated with, endorsed by, sponsored by, or officially connected to Moodle Pty Ltd or the Moodle project. The name is used descriptively to identify compatibility with Moodle LMS.
+
 ---
 
 ## Built by CSMediaPro

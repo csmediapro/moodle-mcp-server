@@ -58,4 +58,4 @@ Most users launch the server through an MCP client such as Claude Desktop.
 
 AGPL-3.0.
 
-Moodle is a trademark of Moodle Pty Ltd. This project is not affiliated with, endorsed by, or sponsored by Moodle Pty Ltd.
+Moodle is a trademark of Moodle Pty Ltd. `moodle-mcp-server` is an independent CSMediaPro project and is not affiliated with, endorsed by, sponsored by, or officially connected to Moodle Pty Ltd or the Moodle project. The name is used descriptively to identify compatibility with Moodle LMS.
