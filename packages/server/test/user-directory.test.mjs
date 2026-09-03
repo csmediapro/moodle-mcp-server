@@ -169,6 +169,26 @@ test('list_users fetches full directory and filters in memory when confirmed', a
   assert.strictEqual(cache.filters, undefined);
 });
 
+test('list_users applies _silo through the cached directory filter pipeline', async () => {
+  const handler = plugin.tools[0].createHandler(testContext);
+  const result = await handler({
+    _silo: { field: 'school', value: 'Test School' },
+    confirmed: true
+  });
+
+  assert.strictEqual(result.data.kind, 'table');
+  assert.strictEqual(result.data.rows.length, 2);
+  assert.deepStrictEqual(
+    result.data.rows.map((row) => row.id),
+    [1, 2]
+  );
+
+  const cacheData = await readFile(cachePath, 'utf8');
+  const cache = JSON.parse(cacheData);
+  assert.strictEqual(cache.users.length, 3);
+  assert.strictEqual(cache.filters, undefined);
+});
+
 test('list_users respects active user field schema display columns', async () => {
   await mkdir(dirname(schemaPath), { recursive: true });
   await writeFile(schemaPath, JSON.stringify({

@@ -6,6 +6,7 @@ import {
   buildToolResponse,
 } from "./response-types.js";
 import { getCategories, getCourses } from "./cache.js";
+import { extractSilo, matchesSilo } from "./silo.js";
 
 export const name = "list_user_courses";
 
@@ -19,6 +20,11 @@ export const inputSchema = z.object({
   userid: z.number().int().positive().describe("Exact Moodle user ID"),
   limit: z.number().int().min(1).max(200).optional().default(25).describe("Maximum courses to return"),
   offset: z.number().int().min(0).optional().default(0).describe("Pagination offset"),
+  /** Internal: silo constraint injected by agent-edge */
+  _silo: z.object({
+    field: z.string(),
+    value: z.string(),
+  }).optional().describe("INTERNAL: Silo filter injected by agent-edge. Not for direct use."),
 });
 
 type MoodleUserCourse = {
@@ -39,7 +45,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       userid: number;
       limit: number;
       offset: number;
+      _silo?: { field: string; value: string };
     };
+
+    const silo = extractSilo(parsed as unknown as Record<string, unknown>);
 
     if (!hasCapability(caps, "core_enrol_get_users_courses")) {
       return buildToolErrorResponse({
@@ -63,6 +72,64 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           "Search users by lastname [Last Name]",
         ],
       });
+    }
+
+    // Pre-flight silo check: verify the target user is within the sub-user's silo
+    if (silo) {
+      if (!hasCapability(caps, "core_user_get_users_by_field")) {
+        return buildToolErrorResponse({
+          error: {
+            code: "silo_user_lookup_capability_missing",
+            message: "core_user_get_users_by_field is required for siloed user-course lookups.",
+            kind: "capability",
+            canRetry: false,
+            actionRequired: "Use a Moodle token/service that exposes core_user_get_users_by_field, or call without _silo in an admin/standalone context.",
+          },
+          summary: "I could not list courses for that user because siloed direct user lookups require exact user lookup capability.",
+          meta: {
+            tool: name,
+            title: `User Courses — ${parsed.userid}`,
+            entity: "user",
+            entityId: parsed.userid,
+            resultCount: 0,
+          },
+          suggestedQueries: [
+            "Search users by lastname [Last Name]",
+            "List users in course [Course ID]",
+          ],
+        });
+      }
+
+      const userCheck = await client.call<Array<{ customfields?: Array<{ shortname: string; value: string }> }>>({
+        wsfunction: "core_user_get_users_by_field",
+        params: {
+          field: "id",
+          "values[0]": String(parsed.userid),
+        },
+      });
+      if (!userCheck || userCheck.length === 0 || !matchesSilo(userCheck[0].customfields, silo)) {
+        return buildToolErrorResponse({
+          error: {
+            code: "user_not_found",
+            message: `User ${parsed.userid} not found.`,
+            kind: "not_found",
+            canRetry: false,
+            actionRequired: "Check the user ID and try again.",
+          },
+          summary: `No user found with ID ${parsed.userid}.`,
+          meta: {
+            tool: name,
+            title: `User Courses — ${parsed.userid}`,
+            entity: "user",
+            entityId: parsed.userid,
+            resultCount: 0,
+          },
+          suggestedQueries: [
+            "Search users by lastname [Last Name]",
+            "List users in course [Course ID]",
+          ],
+        });
+      }
     }
 
     const [userCourses, categories, allCourses] = await Promise.all([

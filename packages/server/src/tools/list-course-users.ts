@@ -5,6 +5,7 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
+import { extractSilo, filterUsersBySilo } from "./silo.js";
 import { getCategories, getCourses } from "./cache.js";
 import { searchCoursesByName } from "./search-courses-by-name.js";
 
@@ -55,6 +56,11 @@ export const inputSchema = z.object({
     .optional()
     .default(0)
     .describe("Pagination offset"),
+  /** Internal: silo constraint injected by agent-edge for sub-users */
+  _silo: z.object({
+    field: z.string(),
+    value: z.string(),
+  }).optional().describe("INTERNAL: Silo filter injected by agent-edge. Not for direct use."),
 }).refine((value) => {
   const provided = [value.courseid, value.coursename, value.categoryid].filter(v => v != null).length;
   return provided === 1;
@@ -82,6 +88,12 @@ type EnrolledUser = {
   roles: Array<{ roleid: number; shortname: string }>;
   courseids?: number[];
   coursenames?: string[];
+  customfields?: Array<{
+    type?: string;
+    value: string | number | boolean | null;
+    name?: string;
+    shortname: string;
+  }>;
 };
 
 async function fetchCourseUsers(
@@ -156,7 +168,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       categoryid?: number;
       limit: number;
       offset: number;
+      _silo?: { field: string; value: string };
     };
+
+    const silo = extractSilo(parsed as unknown as Record<string, unknown>);
 
     const available = hasCapability(caps, "core_enrol_get_enrolled_users");
     if (!available) {
@@ -269,10 +284,18 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
     }
 
     let users: Array<EnrolledUser>;
+    let totalForPagination: number | null = null;
     try {
       if (parsed.courseid != null || resolvedCourseId != null) {
         const courseId = parsed.courseid ?? resolvedCourseId!;
-        users = await fetchCourseUsers(client, courseId, parsed.offset, parsed.limit);
+        if (silo) {
+          const allUsers = await fetchCourseUsers(client, courseId, 0, 0);
+          const filteredUsers = filterUsersBySilo(allUsers, silo);
+          totalForPagination = filteredUsers.length;
+          users = filteredUsers.slice(parsed.offset, parsed.offset + parsed.limit);
+        } else {
+          users = await fetchCourseUsers(client, courseId, parsed.offset, parsed.limit);
+        }
       } else if (parsed.categoryid != null) {
         const [courses, categories] = await Promise.all([
           getCourses(client),
@@ -391,9 +414,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           }
         }
 
-        users = Array.from(dedupedUsers.values())
-          .sort((a, b) => a.fullname.localeCompare(b.fullname))
-          .slice(parsed.offset, parsed.offset + parsed.limit);
+        const totalDedupedUsers = dedupedUsers.size;
+        const filteredUsers = filterUsersBySilo(Array.from(dedupedUsers.values()), silo)
+          .sort((a, b) => a.fullname.localeCompare(b.fullname));
+        users = filteredUsers.slice(parsed.offset, parsed.offset + parsed.limit);
 
         const rows = users.map((u) => ({
           id: u.id,
@@ -421,8 +445,8 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           coursenames: u.coursenames ?? [],
         }));
 
-        const totalUniqueUsers = dedupedUsers.size;
-        const duplicateEnrollmentsCollapsed = totalEnrollmentsScanned - totalUniqueUsers;
+        const totalUniqueUsers = filteredUsers.length;
+        const duplicateEnrollmentsCollapsed = totalEnrollmentsScanned - totalDedupedUsers;
         const neverAccessed = rows.filter((row) => row.lastcourseaccess === "never").length;
         const roleCounts = rows.reduce<Record<string, number>>((acc, row) => {
           for (const role of row.roles as string[]) {
@@ -632,8 +656,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
         pagination: {
           offset: parsed.offset,
           limit: parsed.limit,
-          total: rows.length,
-          hasMore: rows.length === parsed.limit,
+          total: totalForPagination ?? rows.length,
+          hasMore: totalForPagination != null
+            ? parsed.offset + parsed.limit < totalForPagination
+            : rows.length === parsed.limit,
         },
       },
       context: {

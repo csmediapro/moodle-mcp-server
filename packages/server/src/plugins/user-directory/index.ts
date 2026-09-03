@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { MCPServerPlugin } from "../contracts.js";
 import { buildToolResponse, buildToolErrorResponse, type ToolInteractionsBlock } from "../../tools/response-types.js";
+import { extractSilo } from "../../tools/silo.js";
 import { getDisplayFields, loadSchema } from "../../schema/user-fields.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -37,6 +38,10 @@ const inputSchema = z.object({
   offset: z.number().int().min(0).optional().default(0),
   refresh: z.boolean().optional().default(false).describe("INTERNAL ONLY. Force a full directory cache rebuild. Use ONLY if the user explicitly asks for a refresh or the data is known to be stale. Do not set this flag unless specifically required."),
   confirmed: z.boolean().optional().default(false).describe("INTERNAL ONLY. Set to true ONLY when responding to a server-side confirmation request. Do not set this flag by default - it will cause unnecessary cache rebuilds."),
+  _silo: z.object({
+    field: z.string(),
+    value: z.string(),
+  }).optional().describe("INTERNAL: Silo filter injected by agent-edge. Not for direct use."),
 });
 
 const SUMMARY_SORT_VALUES = ["count_desc", "count_asc", "value_asc", "value_desc"] as const;
@@ -114,6 +119,10 @@ const summarizeFieldInputSchema = z.object({
   ).describe(
     "Sort grouped field values. Canonical values: count_desc, count_asc, value_asc, value_desc. Common aliases like count, value, name, and alphabetical are accepted.",
   ),
+  _silo: z.object({
+    field: z.string(),
+    value: z.string(),
+  }).optional().describe("INTERNAL: Silo filter injected by agent-edge. Not for direct use."),
 });
 
 const BASE_COLUMNS = [
@@ -124,7 +133,7 @@ const BASE_COLUMNS = [
 ];
 
 // Internal/control keys that should never be used as filters
-const CONTROL_KEYS = new Set(["confirmed", "refresh", "limit", "offset", "emptyFields"]);
+const CONTROL_KEYS = new Set(["confirmed", "refresh", "limit", "offset", "emptyFields", "_silo"]);
 
 // Known aliases for common filter fields (model-friendly → normalized)
 const FILTER_ALIASES: Record<string, string> = {
@@ -707,7 +716,10 @@ export const plugin: MCPServerPlugin = {
         return async (args: unknown) => {
           const parsed = inputSchema.parse(args);
           const { limit = 100, offset = 0, refresh = false, confirmed = false } = parsed;
-          const { filters, emptyFields } = normalizeUserDirectoryQuery(parsed.filters ?? {}, parsed.emptyFields ?? []);
+          const silo = extractSilo(parsed as unknown as Record<string, unknown>);
+          const rawFilters = { ...(parsed.filters ?? {}) };
+          if (silo) rawFilters[silo.field] = silo.value;
+          const { filters, emptyFields } = normalizeUserDirectoryQuery(rawFilters, parsed.emptyFields ?? []);
           const moodleUrl = ctx.moodleClient.getBaseUrl();
 
           // Clamp limit within bounds
@@ -883,7 +895,10 @@ export const plugin: MCPServerPlugin = {
         return async (args: unknown) => {
           const parsed = summarizeFieldInputSchema.parse(args);
           const field = normalizeFieldKey(parsed.field);
-          const { filters, emptyFields } = normalizeUserDirectoryQuery(parsed.filters ?? {}, parsed.emptyFields ?? []);
+          const silo = extractSilo(parsed as unknown as Record<string, unknown>);
+          const rawFilters = { ...(parsed.filters ?? {}) };
+          if (silo) rawFilters[silo.field] = silo.value;
+          const { filters, emptyFields } = normalizeUserDirectoryQuery(rawFilters, parsed.emptyFields ?? []);
           const limit = Math.min(Math.max(parsed.limit ?? 100, 1), 1000);
           const offset = parsed.offset ?? 0;
           const sort = parsed.sort ?? "count_desc";

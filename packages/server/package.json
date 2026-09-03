@@ -1,6 +1,6 @@
 {
   "name": "moodle-mcp-server-aql",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "mcpName": "io.github.csmediapro/moodle-mcp-server-aql",
   "description": "Open-source MCP server for querying Moodle LMS data through natural language. Attach your agent to your LMS data.",
   "license": "AGPL-3.0",

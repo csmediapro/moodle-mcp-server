@@ -12,6 +12,7 @@ import {
   getDisplayFields,
   normalizeCustomFields,
 } from "../schema/user-fields.js";
+import { extractSilo, matchesSilo } from "./silo.js";
 
 export const name = "get_user";
 
@@ -25,6 +26,11 @@ export const inputSchema = z.object({
   email: z.string().trim().email().optional().describe("Exact email address"),
   username: z.string().trim().min(1).optional().describe("Exact Moodle username"),
   presentation: z.enum(["compact", "full"]).optional().default("compact").describe("How much user detail to display. Use compact for workflow steps and full when explicitly asked for all user details."),
+  /** Internal: silo constraint injected by agent-edge */
+  _silo: z.object({
+    field: z.string(),
+    value: z.string(),
+  }).optional().describe("INTERNAL: Silo filter injected by agent-edge. Not for direct use."),
 }).refine((value) => [value.id, value.email, value.username].filter((v) => v != null).length === 1, {
   message: "Provide exactly one of id, email, or username",
   path: ["id"],
@@ -131,7 +137,10 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       email?: string;
       username?: string;
       presentation: "compact" | "full";
+      _silo?: { field: string; value: string };
     };
+
+    const silo = extractSilo(parsed as unknown as Record<string, unknown>);
 
     if (!hasCapability(caps, "core_user_get_users_by_field")) {
       return buildToolErrorResponse({
@@ -188,7 +197,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
           canRetry: true,
           actionRequired: "Retry with a different exact ID, email, or username, or use search_users for broader matching.",
         },
-        summary: `No user matched the provided ${field}.`,
+        summary: `No user matched ${field}=${value}.`,
         meta: {
           tool: name,
           title: "User Lookup",
@@ -197,7 +206,31 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
         },
         suggestedQueries: [
           "Search users by lastname [Last Name]",
-          "Search users by email [Email Fragment or Exact Email]",
+          "List users in course [Course ID]",
+        ],
+      });
+    }
+
+    // Silo check: if _silo is present, verify the user matches
+    if (silo && !matchesSilo(users[0].customfields, silo)) {
+      return buildToolErrorResponse({
+        error: {
+          code: "user_not_found",
+          message: `No user matched ${field}=${value}.`,
+          kind: "not_found",
+          canRetry: true,
+          actionRequired: "Retry with a different ID, email, or username.",
+        },
+        summary: `No user matched ${field}=${value}.`,
+        meta: {
+          tool: name,
+          title: "User Lookup",
+          entity: "user_directory",
+          resultCount: 0,
+        },
+        suggestedQueries: [
+          "Search users by lastname [Last Name]",
+          "List users in course [Course ID]",
         ],
       });
     }

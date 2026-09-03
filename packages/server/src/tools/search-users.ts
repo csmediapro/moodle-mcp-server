@@ -12,6 +12,7 @@ import {
   getDisplayFields,
   normalizeCustomFields,
 } from "../schema/user-fields.js";
+import { extractSilo, filterUsersBySilo } from "./silo.js";
 
 export const name = "search_users";
 
@@ -30,6 +31,11 @@ export const inputSchema = z.object({
   idnumber: z.string().trim().min(1).optional().describe("Search by ID number"),
   limit: z.number().int().min(1).max(200).optional().default(25).describe("Maximum users to return"),
   offset: z.number().int().min(0).optional().default(0).describe("Pagination offset applied after Moodle returns matches"),
+  /** Internal: silo constraint injected by agent-edge */
+  _silo: z.object({
+    field: z.string(),
+    value: z.string(),
+  }).optional().describe("INTERNAL: Silo filter injected by agent-edge. Not for direct use."),
 }).refine(
   (value) => [value.firstname, value.lastname, value.email, value.username, value.idnumber].some((v) => v != null),
   {
@@ -143,6 +149,7 @@ export function normalizeUser(user: MoodleUser) {
 export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
   return async (args: unknown) => {
     const parsed = inputSchema.parse(args) as {
+      _silo?: { field: string; value: string };
       firstname?: string;
       lastname?: string;
       email?: string;
@@ -151,6 +158,8 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       limit: number;
       offset: number;
     };
+
+    const silo = extractSilo(parsed as unknown as Record<string, unknown>);
 
     if (!hasCapability(caps, "core_user_get_users")) {
       return buildToolErrorResponse({
@@ -194,7 +203,7 @@ export function createHandler(client: MoodleClient, caps: MoodleCapabilities) {
       params,
     });
 
-    const allUsers = (result.users ?? []).map(normalizeUser);
+    const allUsers = filterUsersBySilo((result.users ?? []).map(normalizeUser), silo);
     const pagedUsers = allUsers.slice(parsed.offset, parsed.offset + parsed.limit);
     const warnings = (result.warnings ?? []).map((warning) => warning.message).filter(Boolean) as string[];
 
