@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { callTool, initMCPClient, listTools } from "@/lib/mcp-client";
-
-let mcpInitialized = false;
-
-async function ensureMCPReady() {
-  if (mcpInitialized) return;
-
-  const configPath = resolve(process.cwd(), "config.json");
-  const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
-    mcp: { serverCommand: string; serverArgs: string[]; serverCwd?: string };
-  };
-
-  await initMCPClient(config.mcp);
-  mcpInitialized = true;
-}
+import { callTool, listTools } from "@/lib/mcp-client";
+import { ensureMCPReady, tokenFromHeaders } from "@/lib/mcp-init";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -33,7 +18,7 @@ export async function POST(request: NextRequest) {
 
     const args = isRecord(body.args) ? body.args : {};
 
-    await ensureMCPReady();
+    await ensureMCPReady(tokenFromHeaders(request.headers));
 
     const toolName = body.tool.trim();
     const toolExists = listTools().some((tool) => tool.name === toolName);

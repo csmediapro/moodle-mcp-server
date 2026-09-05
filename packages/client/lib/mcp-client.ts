@@ -18,6 +18,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { resolve } from "node:path";
 import type { Tool } from "./llm/types";
 
@@ -25,10 +26,18 @@ const GLOBAL_KEY = "__moodle_mcp_client__";
 
 interface MCPSingleton {
   client: Client | null;
-  transport: StdioClientTransport | null;
+  transport: StdioClientTransport | StreamableHTTPClientTransport | null;
   toolsCache: Tool[] | null;
   agentRuntimeConfig: AgentRuntimeConfig | null;
   initialized: boolean;
+}
+
+export type McpClientConfig =
+  | { serverCommand: string; serverArgs: string[]; serverCwd?: string }
+  | { endpoint: string; authToken?: string };
+
+function isHttpConfig(cfg: McpClientConfig): cfg is { endpoint: string; authToken?: string } {
+  return "endpoint" in cfg;
 }
 
 export type AgentCaptureTransform = "filterKey" | "filterValue" | "number";
@@ -116,21 +125,31 @@ function getStore(): MCPSingleton {
  * fetches the tool list. Safe to call multiple times; subsequent
  * calls are no-ops.
  */
-export async function initMCPClient(mcpConfig: {
-  serverCommand: string;
-  serverArgs: string[];
-  serverCwd?: string;
-}): Promise<void> {
+export async function initMCPClient(mcpConfig: McpClientConfig): Promise<void> {
   const store = getStore();
   if (store.initialized) return;
 
-  store.transport = new StdioClientTransport({
-    command: mcpConfig.serverCommand,
-    args: mcpConfig.serverArgs,
-    ...(mcpConfig.serverCwd
-      ? { cwd: resolve(/* turbopackIgnore: true */ process.cwd(), mcpConfig.serverCwd) }
-      : {}),
-  });
+  if (isHttpConfig(mcpConfig)) {
+    // HTTP mode — connect to an existing MCP HTTP endpoint (e.g. Agent Edge)
+    const token = mcpConfig.authToken || process.env.MCP_AGENT_EDGE_TOKEN || "";
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    store.transport = new StreamableHTTPClientTransport(
+      new URL(mcpConfig.endpoint),
+      { requestInit: { headers } },
+    );
+  } else {
+    // Stdio mode — spawn the MCP server as a subprocess (original behavior)
+    store.transport = new StdioClientTransport({
+      command: mcpConfig.serverCommand,
+      args: mcpConfig.serverArgs,
+      ...(mcpConfig.serverCwd
+        ? { cwd: resolve(/* turbopackIgnore: true */ process.cwd(), mcpConfig.serverCwd) }
+        : {}),
+    });
+  }
 
   store.client = new Client(
     { name: "moodle-mcp-client", version: "0.1.0" },

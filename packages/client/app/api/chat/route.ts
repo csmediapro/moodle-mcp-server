@@ -52,7 +52,6 @@ import { logChatEval, logToolEval } from "@/lib/eval-logging";
 import { logCompositePattern } from "@/lib/composite-logging";
 import {
   getAgentRuntimeConfig,
-  initMCPClient,
   listTools,
   callTool,
   type AgentCapture,
@@ -61,12 +60,12 @@ import {
   type AgentRuntimeConfig,
   type AgentToolRewrite,
 } from "@/lib/mcp-client";
+import { ensureMCPReady, tokenFromHeaders } from "@/lib/mcp-init";
 import { formatToolResultForLLM } from "@/lib/tool-result";
 import type { Message, Tool, LLMProvider } from "@/lib/llm/types";
 
 // Initialize MCP client once at module load
 // (Next.js modules persist across requests in dev, once in prod)
-let mcpInitialized = false;
 
 function isToolErrorResult(value: unknown): boolean {
   return (
@@ -731,17 +730,7 @@ function buildFinalSummaryMessages(currentMessages: Message[]): Message[] {
   ];
 }
 
-async function ensureMCPReady() {
-  if (mcpInitialized) return;
-
-  const configPath = resolve(process.cwd(), "config.json");
-  const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
-    mcp: { serverCommand: string; serverArgs: string[]; serverCwd?: string };
-  };
-
-  await initMCPClient(config.mcp);
-  mcpInitialized = true;
-}
+// ensureMCPReady is imported from @/lib/mcp-init
 
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
@@ -825,8 +814,8 @@ export async function POST(request: NextRequest) {
         requestStart = Date.now();
         const userMessage = body.message;
 
-        // Initialize MCP server connection
-        await ensureMCPReady();
+        // Initialize MCP server connection (with Agent Edge token if present)
+        await ensureMCPReady(tokenFromHeaders(request.headers));
         tools = listTools().filter((tool) => tool.name !== "get_agent_runtime_config");
         const agentRuntimeConfig = getAgentRuntimeConfig();
 

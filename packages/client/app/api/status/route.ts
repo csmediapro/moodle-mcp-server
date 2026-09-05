@@ -5,18 +5,13 @@
  */
 
 import { NextResponse } from "next/server";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { initMCPClient, callTool } from "@/lib/mcp-client";
+import { ensureMCPReady, tokenFromHeaders } from "@/lib/mcp-init";
 import { readServerDisplayConfig } from "@/lib/server-config";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const configPath = resolve(process.cwd(), "config.json");
-    const config = JSON.parse(readFileSync(configPath, "utf-8")) as {
-      mcp: { serverCommand: string; serverArgs: string[]; serverCwd?: string };
-    };
-    await initMCPClient(config.mcp);
+    await ensureMCPReady(tokenFromHeaders(request.headers));
 
     const result = await callTool("get_site_info", {});
     const { serverName } = readServerDisplayConfig();
