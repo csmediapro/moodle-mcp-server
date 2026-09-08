@@ -16,6 +16,7 @@ import * as getCapabilities from "../tools/get-capabilities.js";
 import * as getAgentRuntimeConfig from "../tools/get-agent-runtime-config.js";
 import type { ToolCatalogEntry } from "../tools/get-capabilities.js";
 import type { AgentRegistration, LoadedPlugin } from "../plugins/contracts.js";
+import { getCourses, getCategories } from "../tools/cache.js";
 
 /**
  * Type for a log function used by the factory.
@@ -180,6 +181,10 @@ export function createServer(opts: ServerFactoryOptions): ServerFactoryResult {
         config: {
           serverName: opts.name,
           serverVersion: opts.version,
+        },
+        cache: {
+          getCourses: () => getCourses(opts.moodleClient),
+          getCategories: () => getCategories(opts.moodleClient),
         },
       });
       toolDefinitions.push({

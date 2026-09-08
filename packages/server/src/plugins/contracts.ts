@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { MoodleClient } from "../moodle/client.js";
 import type { MoodleCapabilities } from "../moodle/capabilities.js";
 import type { LogFn } from "../server/factory.js";
+import type { Course, Category } from "../tools/cache.js";
 export type {
   ToolColumn,
   ToolContextBlock,
@@ -82,6 +83,11 @@ export interface AgentRegistration {
   continuationActions?: AgentContinuationAction[];
 }
 
+export interface PluginContextCache {
+  getCourses(): Promise<Course[]>;
+  getCategories(): Promise<Category[]>;
+}
+
 export interface PluginContext {
   moodleClient: MoodleClient;
   capabilities: MoodleCapabilities;
@@ -90,6 +96,7 @@ export interface PluginContext {
     serverName: string;
     serverVersion: string;
   };
+  cache: PluginContextCache;
 }
 
 export interface ToolModule {

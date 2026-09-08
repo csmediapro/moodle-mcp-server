@@ -7,6 +7,16 @@
   "private": false,
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./sdk": {
+      "import": "./dist/plugins/sdk.js",
+      "types": "./dist/plugins/sdk.d.ts"
+    }
+  },
   "homepage": "https://csmediapro.com/products/moodle-mcp-server",
   "repository": {
     "type": "git",

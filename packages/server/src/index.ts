@@ -23,7 +23,7 @@ import { emitStatus, initLogging, log } from "./logging/index.js";
 import { MoodleClient } from "./moodle/client.js";
 import { probeCapabilities } from "./moodle/capabilities.js";
 import { NoopAuthenticator } from "./auth/noop.js";
-import { warmupCaches } from "./tools/cache.js";
+import { warmupCaches, getCourses, getCategories } from "./tools/cache.js";
 import { createServer } from "./server/factory.js";
 import { loadPlugins } from "./plugins/loader.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -170,6 +170,10 @@ async function main(): Promise<void> {
         config: {
           serverName: config.server.name,
           serverVersion: config.server.version,
+        },
+        cache: {
+          getCourses: () => getCourses(moodleClient),
+          getCategories: () => getCategories(moodleClient),
         },
       },
     );

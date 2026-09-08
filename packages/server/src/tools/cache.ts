@@ -20,7 +20,7 @@ import { MoodleClient } from "../moodle/client.js";
  * server-side file cache, and finally from Moodle when no valid cache exists.
  */
 
-type Category = {
+export type Category = {
   id: number;
   name: string;
   description: string;
@@ -29,7 +29,7 @@ type Category = {
   path: string;
 };
 
-type Course = {
+export type Course = {
   id: number;
   fullname: string;
   shortname: string;

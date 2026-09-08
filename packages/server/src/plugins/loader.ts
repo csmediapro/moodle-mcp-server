@@ -11,6 +11,7 @@
 import { readdirSync, existsSync, statSync, readFileSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { hasCapability } from "../moodle/capabilities.js";
+import { getCourses, getCategories } from "../tools/cache.js";
 import type { LogFn } from "../server/factory.js";
 import {
   PluginManifestSchema,
@@ -30,6 +31,7 @@ export interface PluginLoaderContextBase {
   capabilities: PluginContext["capabilities"];
   log: PluginContext["log"];
   config: PluginContext["config"];
+  cache: PluginContext["cache"];
   emitStatus?: (event: StatusEvent) => void;
 }
 
