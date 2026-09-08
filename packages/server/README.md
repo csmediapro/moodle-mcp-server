@@ -83,6 +83,24 @@ node packages/server/dist/index.js
 }
 ```
 
+## Plugin SDK
+
+This package also exports a Plugin SDK for writing plugins that extend the
+server with custom tools. Plugins import shared utilities and types from the
+SDK instead of reaching into server internals:
+
+```ts
+import {
+  buildToolResponse,
+  hasCapability,
+  type MCPServerPlugin,
+} from "moodle-mcp-server-aql/sdk";
+```
+
+See:
+- [Creating Plugins](../../docs/plugins/CREATING-PLUGINS.md)
+- [Plugin Contract](../../docs/plugins/CONTRACT.md)
+
 ## License
 
 AGPL-3.0.

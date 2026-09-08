@@ -4,6 +4,14 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## Unreleased
+
+- **Plugin SDK**: Exported a public SDK module at `moodle-mcp-server-aql/sdk` re-exporting response builders, silo helpers, capability checking, error class, cache access, course search, user field schema helpers, and all plugin contract types. Plugins should import from the SDK instead of reaching into server internals.
+- **PluginContext expanded**: Added `cache: PluginContextCache` to `PluginContext` with `getCourses()` and `getCategories()` so plugins can access the core's cache without direct imports.
+- **Package exports**: Added `"./sdk"` export path to `package.json` with proper `import` and `types` fields for TypeScript NodeNext resolution.
+- **user-directory plugin moved**: The `user-directory` plugin is no longer bundled with the core. It now lives in `mcp-agent-edge` as a premium plugin. Standalone users who need user directory functionality can install it separately or write their own using the Plugin SDK.
+- Updated plugin documentation ([Creating Plugins](docs/plugins/CREATING-PLUGINS.md), [Plugin Contract](docs/plugins/CONTRACT.md)) with SDK usage and expanded context.
+
 ## 0.1.2 - 2026-09-03
 
 - Added optional internal `_silo` filtering for user-facing tools, intended for agent-edge sub-user boundaries.

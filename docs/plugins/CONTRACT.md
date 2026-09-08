@@ -47,6 +47,11 @@ Field meanings:
 The core passes a typed runtime context to plugin hooks and tool handlers.
 
 ```ts
+export interface PluginContextCache {
+  getCourses(): Promise<Course[]>;
+  getCategories(): Promise<Category[]>;
+}
+
 export interface PluginContext {
   moodleClient: MoodleClient;
   capabilities: MoodleCapabilities;
@@ -55,6 +60,7 @@ export interface PluginContext {
     serverName: string;
     serverVersion: string;
   };
+  cache: PluginContextCache;
 }
 ```
 
@@ -64,8 +70,15 @@ The context contract is intentionally narrow:
 - `capabilities`: startup-probed Moodle function set
 - `log`: shared structured logger
 - `config`: stable host metadata currently exposed to plugins
+- `cache`: access to the core's course/category cache (warm at startup). Use
+  `ctx.cache.getCourses()` and `ctx.cache.getCategories()` instead of importing
+  the cache module directly. Alternatively, import `getCourses` and
+  `getCategories` from the Plugin SDK if you need to call them with a specific
+  client instance.
 
-Plugins should treat this as the entire supported host API. Do not reach into core internals outside this contract.
+Plugins should treat this as the entire supported host API. Do not reach into
+core internals outside this contract. Import shared utilities from
+`moodle-mcp-server-aql/sdk` (see [Creating Plugins](./CREATING-PLUGINS.md#plugin-sdk)).
 
 ## Entitlements
 

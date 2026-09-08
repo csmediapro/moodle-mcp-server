@@ -18,7 +18,7 @@ Do not import private internals from the core outside the documented contracts.
 
 ```ts
 import { z } from "zod";
-import type { MCPServerPlugin } from "../../packages/server/src/plugins/contracts.js";
+import type { MCPServerPlugin } from "moodle-mcp-server-aql/sdk";
 
 export const plugin: MCPServerPlugin = {
   manifest: {
@@ -221,6 +221,48 @@ Avoid:
 - silent no-ops
 - magical feature flags
 - implicit fallback behavior the operator cannot observe
+
+## Plugin SDK
+
+Plugins should import shared utilities and types from the Plugin SDK, not from
+server internals directly. The SDK is published as an export path from the
+`moodle-mcp-server-aql` package:
+
+```ts
+import {
+  buildToolResponse,
+  buildToolErrorResponse,
+  extractSilo,
+  filterUsersBySilo,
+  matchesSilo,
+  hasCapability,
+  MoodleAPIError,
+  loadSchema,
+  getDisplayFields,
+  searchCoursesByName,
+  getCourses,
+  getCategories,
+  type MCPServerPlugin,
+  type PluginContext,
+  type ToolResponse,
+  type Course,
+  type Category,
+} from "moodle-mcp-server-aql/sdk";
+```
+
+The SDK re-exports:
+
+- **Response builders**: `buildToolResponse`, `buildToolErrorResponse`
+- **Silo helpers**: `extractSilo`, `filterUsersBySilo`, `matchesSilo`, `stripSilo`
+- **Capability checking**: `hasCapability`
+- **Error class**: `MoodleAPIError`
+- **Cache helpers**: `getCourses`, `getCategories` (also available via `ctx.cache`)
+- **Course search**: `searchCoursesByName`
+- **User field schema**: `loadSchema`, `getDisplayFields`, `getDisplayFieldDefs`
+- **Types**: `MCPServerPlugin`, `PluginContext`, `ToolResponse`, `Course`, `Category`, and more
+
+Do not import from `../../moodle/` or `../../tools/` — those are internal
+implementation paths that may change. Always import from the SDK.
 
 ## Recommended Packaging Pattern
 
