@@ -6,7 +6,7 @@
  * stable interface, plugins consume it.
  *
  * Usage:
- *   import { buildToolResponse, extractSilo, hasCapability } from "@moodle-mcp/server/sdk";
+ *   import { buildToolResponse, extractSilo, hasCapability } from "moodle-mcp-server-aql/sdk";
  *
  * Re-exports:
  *   - Response builders (buildToolResponse, buildToolErrorResponse)

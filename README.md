@@ -80,12 +80,9 @@ After connecting to a Moodle site, run the `refresh_user_field_schema` tool once
 discover available standard and custom user fields. A minimal example shape is included
 at `packages/server/data/user-field-schema.example.json`.
 
-The `user-directory` plugin stores a normalized full-user cache with custom profile
-fields flattened into top-level keys such as `school`. Once that cache exists,
-`list_users` can filter cached users in memory, and `summarize_user_directory_field`
-can return cached distinct values and counts. For example, "show unique schools" or
-"show schools and number of users assigned to each one" summarizes the cached
-`school` field without another Moodle fetch.
+Separately installed plugins can use this schema to flatten custom profile fields
+into stable keys such as `school`. The premium `user-directory` plugin, for example,
+uses it to cache and summarize full-user directory fields outside the OSS core.
 
 ### Config identity
 

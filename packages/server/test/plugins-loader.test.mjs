@@ -135,26 +135,6 @@ test("loadPlugins loads the checked-in hello plugin example", async () => {
   });
 });
 
-test("loadPlugins loads the checked-in user directory plugin", async () => {
-  const pluginPath = resolve(process.cwd(), "dist/plugins/user-directory");
-
-  const { ctx } = baseContext({
-    capabilities: {
-      functions: new Set([
-        "core_user_get_users",
-      ]),
-      probedAt: new Date("2026-01-01T00:00:00.000Z"),
-    },
-  });
-  const loaded = await loadPlugins([{ path: pluginPath }], ctx);
-
-  assert.equal(loaded.length, 1);
-  assert.equal(loaded[0].manifest.id, "user-directory");
-  assert.equal(loaded[0].tools[0].name, "list_users");
-  assert.ok(loaded[0].agent.intentRoutes.some((route) => route.tool === "list_users"));
-  assert.ok(loaded[0].agent.toolRewrites.some((rewrite) => rewrite.tool === "list_users"));
-});
-
 test("loadPlugins skips plugins with missing required capabilities", async () => {
   const dir = await tempPluginDir("missing-cap");
   await writePlugin(dir, pluginSource({ requiredCapabilities: ["gradereport_user_get_grade_items"] }));

@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## 0.1.4 - 2026-09-09
+
+- **SDK packaging fix**: Include `dist/plugins/sdk.*` in the npm package so the public `moodle-mcp-server-aql/sdk` export added in 0.1.3 resolves from the published tarball.
+- **Release metadata**: Align server package lock metadata and MCP Registry `server.json` on version 0.1.4.
+- **Repository cleanup**: Removed stale `user-directory` core tests and README wording after the plugin moved out of the OSS server package.
+
 ## 0.1.3 - 2026-09-08
 
 - **Plugin SDK**: Exported a public SDK module at `moodle-mcp-server-aql/sdk` re-exporting response builders, silo helpers, capability checking, error class, cache access, course search, user field schema helpers, and all plugin contract types. Plugins should import from the SDK instead of reaching into server internals.
