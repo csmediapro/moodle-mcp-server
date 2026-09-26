@@ -1,6 +1,6 @@
 {
   "name": "moodle-mcp-server-workspace",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "description": "Workspace for the moodle-mcp-server core and reference client",
   "private": true,
   "license": "AGPL-3.0",
@@ -16,7 +16,8 @@
     "client:dev": "npm run dev -w packages/client",
     "client:build": "npm run build -w packages/client",
     "build": "npm run server:build && npm run client:build",
-    "clean": "rm -rf packages/server/dist packages/client/.next"
+    "clean": "rm -rf packages/server/dist packages/client/.next",
+    "version:check": "node scripts/check-version-sync.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.0"
