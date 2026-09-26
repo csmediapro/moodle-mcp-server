@@ -13,9 +13,12 @@
  *   - Silo helpers (extractSilo, filterUsersBySilo, matchesSilo, stripSilo)
  *   - Capability checking (hasCapability)
  *   - Error class (MoodleAPIError)
+ *   - Zod schema builder (`z`) for plugin input schemas
  *   - Types (MoodleClient, MoodleCapabilities, PluginContext, MCPServerPlugin, etc.)
  *   - Cache access via PluginContext.cache (added in this version)
  */
+
+export { z } from "zod";
 
 // Response builders
 export {

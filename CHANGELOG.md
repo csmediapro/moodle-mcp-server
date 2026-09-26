@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## 0.1.5 - 2026-09-25
+
+- **Tool schema compatibility**: Fixed Zod-to-JSON-Schema conversion so tools built with either Zod 3 or Zod 4 advertise complete input schemas to LLM providers.
+- **Plugin SDK**: Exported `z` from `moodle-mcp-server-aql/sdk` so plugins can build schemas through the MCP Core Server SDK path.
+- **Regression coverage**: Added tests proving progress-report-style schemas advertise required parameters, nested objects, optional/defaulted fields, and descriptions for both Zod 3 and Zod 4.
+
 ## 0.1.4 - 2026-09-09
 
 - **SDK packaging fix**: Include `dist/plugins/sdk.*` in the npm package so the public `moodle-mcp-server-aql/sdk` export added in 0.1.3 resolves from the published tarball.
