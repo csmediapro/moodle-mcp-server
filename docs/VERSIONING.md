@@ -45,11 +45,24 @@ npm run server:test
 Publishing, deprecating npm versions, and creating GitHub Releases are public
 external actions. Do them only after explicit approval.
 
+## SDK Stability Rules
+
+- **No breaking SDK changes without a major version bump.** The plugin SDK
+  (`moodle-mcp-server-aql/sdk`) is a public API surface. Once plugins import
+  from it, exports must remain stable.
+- **Add new exports freely; never remove or rename existing ones** without a
+  major version bump (1.0).
+- **Deprecate with a warning before removing.** Document every SDK change in
+  the changelog.
+- **Tightly manage SDK stability.** Prefer additive changes over breaking
+  ones. When in doubt, keep the old export and add a new one.
+- **Agent Edge build-time dependency vs runtime install are separate.**
+  Agent Edge pins a build-time version in `packages/plugins/package.json`.
+  The runtime install is managed by the MCP Core Server update panel. Bump
+  the build dependency only when the SDK API changes.
+
 ## Current Reconciliation Notes
 
 As of the current reconciliation pass, npm, git tags, `packages/server`, and
-`server.json` recognize `0.1.4` as the latest published package version.
-GitHub Releases are stale and need backfilled or corrected separately.
-
-Because npm already has `0.1.4`, the next normal published fix should be
-`0.1.5` unless a deliberate deprecation/backfill plan says otherwise.
+`server.json` recognize `0.1.5` as the latest published package version.
+GitHub Releases have been backfilled through `v0.1.5`.
