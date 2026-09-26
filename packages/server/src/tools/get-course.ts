@@ -5,17 +5,16 @@ import {
   buildToolErrorResponse,
   buildToolResponse,
 } from "./response-types.js";
-import { getCategories } from "./cache.js";
 
 /**
- * get_course — Fetch full details for a single Moodle course.
+ * get_course — Fetch structured details for a single Moodle course.
  */
 export const name = "get_course";
 
 export const description =
-  "Fetch complete details for a single Moodle course by ID. " +
+  "Fetch structured details for a single Moodle course by ID. " +
   "Returns full name, short name, summary, category, format, start/end dates, " +
-  "enrollment methods, and completion tracking settings.";
+  "visibility, and completion tracking settings.";
 
 export const inputSchema = z.object({
   /** Course ID to fetch */
@@ -53,7 +52,13 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
 
     if (!courses || courses.length === 0) {
       return buildToolErrorResponse({
-        error: `Course ${parsed.courseid} not found or not accessible`,
+        error: {
+          code: "course_not_found",
+          message: `Course ${parsed.courseid} not found or not accessible.`,
+          kind: "not_found",
+          canRetry: true,
+          actionRequired: "Retry with a course ID returned by list_courses or search_courses_by_name.",
+        },
         summary: `Course ${parsed.courseid} was not found or is not visible to the API token.`,
         meta: {
           tool: name,
@@ -94,6 +99,7 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
       },
       data: {
         kind: "record",
+        presentation: "compact_card",
         title: `Course Details — ${c.fullname}`,
         record,
       },

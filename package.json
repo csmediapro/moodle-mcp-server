@@ -1,6 +1,6 @@
 {
   "name": "moodle-mcp-server-workspace",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Workspace for the moodle-mcp-server core and reference client",
   "private": true,
   "license": "AGPL-3.0",

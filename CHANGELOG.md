@@ -4,6 +4,14 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## 0.1.6 - 2026-09-26
+
+- **list_courses visibility filter**: Added `visible` boolean parameter so callers can list hidden courses (`visible=false`) or visible courses (`visible=true`) without post-filtering. Raised `limit` max from 200 to 1500 for admin cleanup workflows. Updated tool description and suggested queries.
+- **list_courses category mismatch guard fix**: Fixed an unreachable `category_id_name_mismatch` error branch — `categoryname` resolution was overwriting `resolvedCategoryId` before the mismatch check, making the guard impossible to trigger. Now preserves the original `categoryid` for comparison.
+- **get_course response contract**: Now returns `data.presentation: "compact_card"` for record responses, matching `get_user` and single-result `search_users`. Structured `course_not_found` error replaces plain string error. Cleaned up description to match actual returned fields and removed unused import.
+- **Server response audit**: Documented full tool-by-tool response contract audit at `docs/SERVER_RESPONSE_AUDIT.md`. Server response contract work is frozen; artifact/UX iteration moves to Agent Edge.
+- **Test coverage**: Added `packages/server/test/list-courses.test.mjs` (7 tests: default listing, hidden filter, category+visibility composition, category name resolution, 3 structured error branches). Added `packages/server/test/server-response-contract.test.mjs` (4 tests: get_course compact_card, get_course not-found, schema tool table responses, update_user_field_schema inline status record, valid data.kind guard).
+
 ## 0.1.5 - 2026-09-25
 
 - **Tool schema compatibility**: Fixed Zod-to-JSON-Schema conversion so tools built with either Zod 3 or Zod 4 advertise complete input schemas to LLM providers.

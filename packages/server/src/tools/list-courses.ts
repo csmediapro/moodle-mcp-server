@@ -5,7 +5,7 @@ import { buildToolErrorResponse, buildToolResponse } from "./response-types.js";
 import { getCategories, getCourses } from "./cache.js";
 
 /**
- * list_courses — List all courses visible to the configured API token.
+ * list_courses — List courses available to the configured API token.
  *
  * Session cache: the course list is fetched once and cached in memory.
  * Moodle's core_course_get_courses_by_field returns all courses (no WS-level
@@ -14,11 +14,11 @@ import { getCategories, getCourses } from "./cache.js";
 export const name = "list_courses";
 
 export const description =
-  "List all LMS courses visible to the configured API token. " +
+  "List LMS courses available to the configured API token. " +
   "Returns course ID, full name, short name, category, category path, and visibility. " +
-  "Supports filtering and pagination via categoryid, categoryname, limit, and offset. " +
+  "Supports filtering and pagination via categoryid, categoryname, visible, limit, and offset. " +
   "When categoryname is used, it must match an existing category name exactly; if multiple categories share that name, the tool will ask for the ID instead of guessing. " +
-  "Use limit and offset for subset requests like first 10 or first 50. " +
+  "Use visible=false for hidden courses and visible=true for visible courses. Use limit and offset for subset requests like first 10 or first 50. " +
   "Do not request the full course list unless the user explicitly asks for all courses. " +
   "Use this to discover available courses before drilling into details. Prefer exact category IDs from list_categories when available.";
 
@@ -41,10 +41,15 @@ export const inputSchema = z.object({
     .number()
     .int()
     .min(1)
-    .max(200)
+    .max(1500)
     .optional()
     .default(20)
     .describe("Maximum number of courses to return"),
+  /** Optional: filter by course visibility */
+  visible: z
+    .boolean()
+    .optional()
+    .describe("Filter by course visibility. false returns hidden courses; true returns visible courses."),
   /** Optional: pagination offset */
   offset: z
     .number()
@@ -65,6 +70,7 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
       categoryid?: number;
       categoryname?: string;
       limit: number;
+      visible?: boolean;
       offset: number;
     };
 
@@ -81,6 +87,7 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
 
     let resolvedCategoryId = parsed.categoryid;
     let resolvedCategoryName = parsed.categoryname?.trim();
+    const originalCategoryId = parsed.categoryid;
 
     if (resolvedCategoryName) {
       const normalizedRequestedName = normalizeCategoryName(resolvedCategoryName);
@@ -141,22 +148,24 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
       resolvedCategoryName = matchingCategories[0].name;
     }
 
+    // Guard: if the user supplied both categoryid and categoryname but they
+    // point to different categories, reject instead of silently picking one.
     if (
-      resolvedCategoryId != null &&
+      originalCategoryId != null &&
       resolvedCategoryName != null &&
-      categoryNameMap.get(resolvedCategoryId) != null &&
-      normalizeCategoryName(categoryNameMap.get(resolvedCategoryId) as string) !==
+      categoryNameMap.get(originalCategoryId) != null &&
+      normalizeCategoryName(categoryNameMap.get(originalCategoryId) as string) !==
         normalizeCategoryName(resolvedCategoryName)
     ) {
       return buildToolErrorResponse({
         error: {
           code: "category_id_name_mismatch",
-          message: `categoryid ${resolvedCategoryId} does not match categoryname "${resolvedCategoryName}".`,
+          message: `categoryid ${originalCategoryId} does not match categoryname "${resolvedCategoryName}".`,
           kind: "validation",
           canRetry: true,
           actionRequired: "Retry with a matching categoryid/categoryname pair or provide only one of them.",
         },
-        summary: `categoryid ${resolvedCategoryId} does not match categoryname "${resolvedCategoryName}".`,
+        summary: `categoryid ${originalCategoryId} does not match categoryname "${resolvedCategoryName}".`,
         meta: {
           tool: name,
           title: "LMS Courses",
@@ -164,7 +173,7 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
           resultCount: 0,
         },
         highlights: [
-          `Category ${resolvedCategoryId} is "${categoryNameMap.get(resolvedCategoryId)}".`,
+          `Category ${originalCategoryId} is "${categoryNameMap.get(originalCategoryId)}".`,
         ],
         suggestedQueries: [
           "List top-level categories",
@@ -174,9 +183,12 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
     }
 
     // Filter by category if requested
-    const filtered = resolvedCategoryId != null
+    const categoryFiltered = resolvedCategoryId != null
       ? courses.filter((c) => c.categoryid === resolvedCategoryId)
       : courses;
+    const filtered = parsed.visible == null
+      ? categoryFiltered
+      : categoryFiltered.filter((c) => (c.visible === 1) === parsed.visible);
 
     const offset = parsed.offset ?? 0;
     const limit = parsed.limit ?? 20;
@@ -228,7 +240,8 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
       },
       context: {
         summary:
-          `Showing ${rows.length} of ${filtered.length} courses` +
+          `Showing ${rows.length} of ${filtered.length}` +
+          (parsed.visible == null ? " courses" : parsed.visible ? " visible courses" : " hidden courses") +
           (resolvedCategoryId != null
             ? ` in category ${resolvedCategoryName ?? categoryNameMap.get(resolvedCategoryId) ?? resolvedCategoryId} (ID ${resolvedCategoryId})`
             : "") +
@@ -238,6 +251,7 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
           total: filtered.length,
           visible: visibleCount,
           hidden: filtered.length - visibleCount,
+          visibilityFilter: parsed.visible ?? null,
           categoryid: resolvedCategoryId ?? null,
           offset,
           limit,
@@ -251,6 +265,8 @@ export function createHandler(client: MoodleClient, _caps: MoodleCapabilities) {
             : undefined,
         suggestedQueries: [
           "Show me the first [N] courses",
+          "List hidden courses",
+          "List visible courses",
           "Get details for course [Course ID]",
           "Filter courses by category name [Category Name]",
           "Filter courses by category [Category ID]",

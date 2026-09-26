@@ -6,12 +6,12 @@
     "url": "https://github.com/csmediapro/moodle-mcp-server",
     "source": "github"
   },
-  "version": "0.1.5",
+  "version": "0.1.6",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "moodle-mcp-server-aql",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "transport": {
         "type": "stdio"
       },
