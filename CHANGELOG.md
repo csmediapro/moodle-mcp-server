@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## 0.1.7 - 2026-10-01
+
+- **Course search regex hardening**: Escaped search terms before word-boundary scoring so regex metacharacters like `*` and `()` cannot break `search_courses_by_name` or plugin callers that use the SDK course search helper.
+- **Empty search guard**: Blank or whitespace-only course searches now return no matches instead of scoring every cached course.
+- **Regression coverage**: Added course-search tests for blank, wildcard, and regex-special course-name input.
+
 ## 0.1.6 - 2026-09-26
 
 - **list_courses visibility filter**: Added `visible` boolean parameter so callers can list hidden courses (`visible=false`) or visible courses (`visible=true`) without post-filtering. Raised `limit` max from 200 to 1500 for admin cleanup workflows. Updated tool description and suggested queries.

@@ -31,6 +31,10 @@ export const inputSchema = z.object({
     .describe("Maximum number of matching courses to return"),
 });
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Search courses by name using cached data
  * @param courses Cached course data
@@ -74,6 +78,10 @@ export function searchCoursesByName(
 
   // Normalize search term for case-insensitive matching
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+  if (normalizedSearchTerm.length === 0) {
+    return [];
+  }
+  const wordBoundaryMatch = new RegExp(`\\b${escapeRegExp(normalizedSearchTerm)}\\b`, "i");
 
   // Score and filter courses
   const scoredCourses = courses
@@ -91,8 +99,8 @@ export function searchCoursesByName(
       else if (normalizedShortname.includes(normalizedSearchTerm)) score += 50;
       
       // Bonus for matches at word boundaries
-      if (normalizedFullname.match(new RegExp(`\\b${normalizedSearchTerm}\\b`, 'i'))) score += 25;
-      if (normalizedShortname.match(new RegExp(`\\b${normalizedSearchTerm}\\b`, 'i'))) score += 25;
+      if (wordBoundaryMatch.test(normalizedFullname)) score += 25;
+      if (wordBoundaryMatch.test(normalizedShortname)) score += 25;
       
       return { course, score };
     })

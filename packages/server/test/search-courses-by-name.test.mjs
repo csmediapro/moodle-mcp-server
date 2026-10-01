@@ -53,3 +53,30 @@ test("searchCoursesByName returns correct matches", () => {
   const noMatches = searchCoursesByName(courses, categories, "nonexistent", 10);
   assert.equal(noMatches.length, 0);
 });
+
+test("searchCoursesByName handles empty and regex-special search terms safely", () => {
+  const courses = [{
+    id: 201,
+    fullname: "Pharmacy Technician Math Calculations with eBook(s) v5",
+    shortname: "PHARM-MATH-V5",
+    categoryid: 1,
+    visible: 1
+  }];
+
+  const categories = [{
+    id: 1,
+    name: "Test Category",
+    description: "Test category description",
+    parent: 0,
+    depth: 1,
+    path: "Test Category"
+  }];
+
+  assert.deepEqual(searchCoursesByName(courses, categories, "", 10), []);
+  assert.deepEqual(searchCoursesByName(courses, categories, "   ", 10), []);
+  assert.deepEqual(searchCoursesByName(courses, categories, "*", 10), []);
+
+  const parenMatches = searchCoursesByName(courses, categories, "ebook(s)", 10);
+  assert.equal(parenMatches.length, 1);
+  assert.equal(parenMatches[0].id, 201);
+});
