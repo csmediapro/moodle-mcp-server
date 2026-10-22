@@ -2,10 +2,11 @@
 
 > **Ask your Moodle instance anything. Get structured answers in seconds.**
 
-`moodle-mcp-server` is an open-source MCP (Model Context Protocol) server that connects AI agents directly to Moodle's Web Services API. It is the Moodle connector behind CSMediaPro's broader Agentic Query Layer (AQL) work.
+`moodle-mcp-server` is an open-source MCP (Model Context Protocol) server that connects AI agents directly to Moodle's Web Services API. It is the first reference implementation of the [Agentic Query Layer (AQL)](https://csmediapro.com/notes/agentic-query-layer) pattern — a software design pattern for giving large language models safe, permission-aware, read-only access to structured data.
 
 Instead of learning report builders, writing SQL, or exporting CSVs, you ask questions in plain English — the AI agent queries your LMS and returns structured data.
 
+**AQL pattern:** https://csmediapro.com/notes/agentic-query-layer
 **Project home:** https://csmediapro.com/products/moodle-mcp-server
 **npm package:** https://www.npmjs.com/package/moodle-mcp-server-aql
 **MCP Registry:** `io.github.csmediapro/moodle-mcp-server-aql`
@@ -226,6 +227,8 @@ Restart Claude Desktop. The server's tools will appear in Claude's tool list —
 
 ## Architecture
 
+This project is a reference implementation of the [Agentic Query Layer (AQL)](https://csmediapro.com/notes/agentic-query-layer) pattern — a layer that sits between an AI agent and your data, providing permission-aware, read-only, plain-language access without exposing the underlying data to the model.
+
 ```
 User (plain English question)
     │
@@ -233,7 +236,7 @@ User (plain English question)
 AI Agent (Claude / GPT / Gemini / Ollama / local)
     │
     ▼  MCP Protocol
-`moodle-mcp-server`
+`moodle-mcp-server`  ← AQL connector for Moodle
     ├── Tool Registry (core + plugins)
     ├── Agent Runtime Config (core + plugin rules)
     ├── Optimized Data Layer (secure, efficient data handling)
@@ -278,6 +281,7 @@ Moodle is a trademark of Moodle Pty Ltd. `moodle-mcp-server` is an independent C
 
 ## Built by CSMediaPro
 
-`moodle-mcp-server` is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation.
+`moodle-mcp-server` is built and maintained by [CSMediaPro](https://csmediapro.com), a software development company specializing in AI integration, systems engineering, and workflow automation. It is the first reference implementation of the [Agentic Query Layer (AQL)](https://csmediapro.com/notes/agentic-query-layer) pattern.
 
+- **AQL pattern:** https://csmediapro.com/notes/agentic-query-layer
 - **Contact:** contact@csmediapro.com
