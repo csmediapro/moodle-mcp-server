@@ -11,6 +11,8 @@ export type {
   ToolEntityAction,
   ToolEntityRef,
   ToolInteractionAction,
+  ToolInteractionSubmitAs,
+  ToolRowActionPlacement,
   ToolInteractionsBlock,
   ToolPresentation,
   ToolResponse,

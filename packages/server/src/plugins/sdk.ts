@@ -36,6 +36,8 @@ export type {
   ToolContextBlock,
   ToolResolutionBlock,
   ToolInteractionAction,
+  ToolInteractionSubmitAs,
+  ToolRowActionPlacement,
   ToolRowInteractionsBlock,
   ToolActionInteractionsBlock,
   ToolInteractionsBlock,

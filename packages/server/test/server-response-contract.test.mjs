@@ -11,6 +11,7 @@ import {
   createReorderSchemaHandler,
   createUpdateSchemaHandler,
 } from "../dist/tools/user-schema.js";
+import { buildToolResponse } from "../dist/tools/response-types.js";
 
 const VALID_KINDS = new Set(["table", "record", "list", "none"]);
 
@@ -151,6 +152,35 @@ test("get_course returns an explicit compact-card record response", async () => 
   assert.equal(result.data.record.id, 1583);
   assert.equal(result.data.record.enablecompletion, true);
   assertValidKind(result);
+});
+
+test("structured interactions support direct tool calls and cell placement", () => {
+  const result = buildToolResponse({
+    meta: { tool: "example", title: "Example" },
+    data: {
+      kind: "table",
+      columns: [{ key: "course", label: "Course" }],
+      rows: [{ course: "Example Course", courseId: 12 }],
+    },
+    context: { summary: "One course." },
+    interactions: {
+      mode: "row_actions",
+      submitAs: "direct_tool",
+      rowActions: [{
+        type: "button",
+        label: "View roster",
+        tool: "get_course_roster",
+        argsFromRow: { courseid: "courseId" },
+        placement: { kind: "cell", columnKey: "course" },
+      }],
+    },
+  });
+
+  assert.equal(result.interactions.submitAs, "direct_tool");
+  assert.deepEqual(result.interactions.rowActions[0].placement, {
+    kind: "cell",
+    columnKey: "course",
+  });
 });
 
 test("get_course returns structured not-found errors", async () => {

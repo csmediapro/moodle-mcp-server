@@ -67,12 +67,31 @@ export interface ToolInteractionAction {
   args?: Record<string, unknown>;
   argsFromRow?: Record<string, string>;
   style?: "primary" | "secondary";
+  /**
+   * Optional rendering hint for row actions. Clients that do not support the
+   * placement must render the action in their ordinary row-action area.
+   */
+  placement?: ToolRowActionPlacement;
 }
+
+/** How a client should execute an interaction action. */
+export type ToolInteractionSubmitAs =
+  | "user_message"
+  | "assistant_context"
+  | "direct_tool";
+
+/**
+ * Optional rendering hint for a row action. `actions` is the compatibility
+ * default; `cell` binds an action to the named table-column value.
+ */
+export type ToolRowActionPlacement =
+  | { kind: "actions" }
+  | { kind: "cell"; columnKey: string };
 
 export interface ToolRowInteractionsBlock {
   mode: "row_actions";
   prompt?: string;
-  submitAs?: "user_message" | "assistant_context";
+  submitAs?: ToolInteractionSubmitAs;
   rowKey?: string;
   rowLabelFields?: string[];
   rowActions: ToolInteractionAction[];
@@ -81,7 +100,7 @@ export interface ToolRowInteractionsBlock {
 export interface ToolActionInteractionsBlock {
   mode: "tool_actions";
   prompt?: string;
-  submitAs?: "user_message" | "assistant_context";
+  submitAs?: ToolInteractionSubmitAs;
   actions: ToolInteractionAction[];
 }
 

@@ -318,6 +318,34 @@ Row and tool interactions may use either the legacy `template` form or structure
 }
 ```
 
+### Interaction execution and placement
+
+`submitAs` controls whether the client relays an interaction through the model
+(`user_message` or `assistant_context`) or invokes its declared tool directly
+(`direct_tool`). A direct tool action is appropriate only when the action is
+fully declared by the server and needs no model interpretation.
+
+Row actions may include an optional placement hint. Clients that do not support
+the hint must render the action in their ordinary row-action area.
+
+```ts
+{
+  mode: "row_actions",
+  submitAs: "direct_tool",
+  rowActions: [{
+    type: "button",
+    label: "View enrolled learners",
+    tool: "get_course_roster",
+    argsFromRow: { courseid: "courseId" },
+    placement: { kind: "cell", columnKey: "course" }
+  }]
+}
+```
+
+`placement: { kind: "actions" }` is the compatibility default. The placement
+is presentational only; it does not change the server tool, its arguments, or
+authorization checks.
+
 For row actions, `argsFromRow` maps tool argument names to row field keys. Rows must include those source keys even when the corresponding columns are hidden.
 
 ## Loader Behavior
