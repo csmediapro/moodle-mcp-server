@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## 0.1.8 - 2026-11-06
+
+- **Plugin interaction protocol:** Formalized declarative interaction execution modes, including `direct_tool`, for server-declared actions that a capable client can execute without model interpretation.
+- **Cell-bound row actions:** Added an optional `placement` hint for binding a row action to a named table cell. Clients that do not support cell placement retain a compatible ordinary row-action rendering.
+- **Public SDK and documentation:** Exported the new interaction types through `moodle-mcp-server-aql/sdk`, documented the protocol and fallback behavior, and added contract coverage.
+
 ## 0.1.7 - 2026-10-01
 
 - **Course search regex hardening**: Escaped search terms before word-boundary scoring so regex metacharacters like `*` and `()` cannot break `search_courses_by_name` or plugin callers that use the SDK course search helper.
