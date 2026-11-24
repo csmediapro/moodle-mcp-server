@@ -4,6 +4,17 @@ All notable changes to this project will be documented here.
 
 The project is pre-1.0. Breaking changes may happen while the public API, config shape, and plugin contract settle.
 
+## 1.0.0 - 2026-11-24
+
+Security hardening release. The 1.0 version marks the transition from the building phase to the certification-grade phase across the AQL stack; the security contract is now enforceable and tested.
+
+- **Moodle token transport (finding 7):** `wstoken` now travels in a form-encoded POST body instead of the URL query string, so the token can no longer leak into server, proxy, or analytics access logs. Requests refuse redirects (`redirect: "error"`) so a redirect cannot forward credentials to an unintended origin. Error messages never include the token.
+- **Tool-call log permissions and retention (findings 10, 16.3):** the log directory is created `0700` and the log file `0600` so partially-masked learner search values are not world-readable on shared hosts. A configurable size cap (`logging.toolCallLogMaxBytes`, default 20 MiB, env `LOGGING_TOOL_CALL_LOG_MAX_BYTES`) trims the oldest complete lines; corrupt or partial leading lines from a prior crash are dropped rather than retained as unparseable telemetry.
+- **Telemetry sanitization (finding 10):** masking now covers person-name keys (`name`, `firstname`, `lastname`, `fullname`, `username`, `displayname`) and email-shaped values under any key — including free text containing an embedded email — not just email-labeled keys. `_silo` authorization constraints are retained for scope debugging.
+- **Security test suite:** 10 new tests (`test/security-r0.test.mjs`) covering token-in-body, redirect refusal, token-free error messages, log permissions, retention trimming, partial-line recovery, and sanitization coverage. Suite total: 61.
+
+Companion to the Agent Edge security review (`security-review-2026-11-23.md`). No tool, schema, or plugin contract changes; fully additive. Agent Edge v1.0.0 (R1) will pin this release.
+
 ## 0.1.8 - 2026-11-06
 
 - **Plugin interaction protocol:** Formalized declarative interaction execution modes, including `direct_tool`, for server-declared actions that a capable client can execute without model interpretation.

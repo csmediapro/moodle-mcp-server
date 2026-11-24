@@ -93,6 +93,7 @@ function applyEnvOverrides(raw: unknown): unknown {
     MOODLE_API_VERSION: ["moodle", "apiVersion"],
     LOGGING_LEVEL: ["logging", "level"],
     LOGGING_TOOL_CALL_LOG: ["logging", "toolCallLog"],
+    LOGGING_TOOL_CALL_LOG_MAX_BYTES: ["logging", "toolCallLogMaxBytes"],
     SERVER_ID: ["server", "id"],
     SERVER_NAME: ["server", "name"],
     SERVER_VERSION: ["server", "version"],
@@ -110,7 +111,10 @@ function applyEnvOverrides(raw: unknown): unknown {
       }
       target = target[path[i]] as Record<string, unknown>;
     }
-    target[path[path.length - 1]] = val;
+    // Numeric env overrides are parsed here; invalid values fail schema
+    // validation with a clear message instead of silently misbehaving.
+    target[path[path.length - 1]] =
+      envKey === "LOGGING_TOOL_CALL_LOG_MAX_BYTES" ? Number(val) : val;
   }
 
   return cfg;

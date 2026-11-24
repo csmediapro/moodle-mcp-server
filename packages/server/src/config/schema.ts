@@ -29,6 +29,12 @@ export const ConfigSchema = z.object({
       .default("info"),
     /** Path to JSONL tool-call log file (relative to CWD) */
     toolCallLog: z.string().default("./logs/tool-calls.jsonl"),
+    /**
+     * Retention cap for the tool-call log in bytes. When the file
+     * exceeds this size, the oldest complete lines are dropped.
+     * Default: 20 MiB. Set to 0 to disable size-based retention.
+     */
+    toolCallLogMaxBytes: z.number().int().min(0).optional(),
   }).default({}),
   plugins: z.object({
     /** Search paths for plugin tool modules */

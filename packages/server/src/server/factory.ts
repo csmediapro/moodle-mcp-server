@@ -63,7 +63,32 @@ function normalizeInputSchema(schema: unknown): Record<string, unknown> {
   return { type: "object", properties: {} };
 }
 
-function sanitizeArgsForTelemetry(args: unknown): unknown {
+/**
+ * Keys whose values are personal identifiers that must never appear
+ * verbatim in tool-call telemetry. Email-labeled keys were already
+ * masked; this extends the same protection to person-name fields and
+ * to email values passed under generic keys (the previous rule only
+ * caught keys literally containing "email").
+ */
+const SENSITIVE_KEY_PATTERN = /(^|_)(email|name|username|firstname|lastname|fullname|displayname|principal|phone|mobile)(_|$)/i;
+
+/** Detects email-shaped values regardless of the key they arrive under. */
+const EMAIL_VALUE_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function maskEmail(value: string): string {
+  const atIndex = value.indexOf("@");
+  if (atIndex > 1) {
+    return `${value[0]}***${value.slice(atIndex)}`;
+  }
+  return "***";
+}
+
+/** Replaces email-shaped substrings inside free-text values. */
+function maskEmailsInText(value: string): string {
+  return value.replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, (m) => maskEmail(m));
+}
+
+export function sanitizeArgsForTelemetry(args: unknown): unknown {
   if (Array.isArray(args)) {
     return args.map(sanitizeArgsForTelemetry);
   }
@@ -71,12 +96,20 @@ function sanitizeArgsForTelemetry(args: unknown): unknown {
   if (args && typeof args === "object") {
     return Object.fromEntries(
       Object.entries(args as Record<string, unknown>).map(([key, value]) => {
-        if (typeof value === "string" && key.toLowerCase().includes("email")) {
-          const atIndex = value.indexOf("@");
-          if (atIndex > 1) {
-            return [key, `${value[0]}***${value.slice(atIndex)}`];
+        // _silo is an injected authorization constraint, not learner data;
+        // field/value shape is structural and retained for debugging scope issues.
+        if (key === "_silo") {
+          return [key, sanitizeArgsForTelemetry(value)];
+        }
+        if (typeof value === "string") {
+          // Sensitive keys are fully masked (email-shaped values keep their
+          // domain so the shape stays recognizable for debugging).
+          if (SENSITIVE_KEY_PATTERN.test(key)) {
+            return [key, EMAIL_VALUE_PATTERN.test(value) ? maskEmail(value) : "***"];
           }
-          return [key, "***"];
+          // Any other string may be free text containing an email under a
+          // generic key (finding 10); mask embedded emails, leave the rest.
+          return [key, maskEmailsInText(value)];
         }
         return [key, sanitizeArgsForTelemetry(value)];
       })
